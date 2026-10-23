@@ -3125,6 +3125,22 @@
         "title": "{{name}} a été supprimé"
       },
       "tryAgain": "Réessayer"
+    },
+    "transfer": {
+      "title": "Choisir un nouveau propriétaire",
+      "body": "Choisissez un membre existant de l'espace. Vous deviendrez administrateur après le transfert.",
+      "newOwner": "Nouveau propriétaire",
+      "placeholder": "Choisir un membre de l'espace",
+      "candidate": "{{name}} · {{role}}",
+      "confirmTitle": "Transférer la propriété à {{name}} ?",
+      "confirmBody": "{{name}} deviendra propriétaire de {{workspace}}. Vous deviendrez administrateur.",
+      "submit": "Transférer la propriété",
+      "transferringTitle": "Transfert de la propriété…",
+      "transferringBody": "Gardez cette fenêtre ouverte. La propriété changera à la fin du transfert.",
+      "transferring": "Transfert en cours…",
+      "failed": "Impossible de transférer la propriété. Vous êtes toujours propriétaire. Réessayez.",
+      "noCandidates": "Invitez quelqu'un dans {{workspace}} avant de transférer la propriété.",
+      "done": "Propriété de l'espace transférée à {{name}}. Vous êtes maintenant administrateur."
     }
   },
   "chat": {

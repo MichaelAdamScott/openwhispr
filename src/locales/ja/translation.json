@@ -4863,6 +4863,22 @@
         "title": "{{name}} を削除しました"
       },
       "tryAgain": "もう一度試す"
+    },
+    "transfer": {
+      "title": "新しいオーナーを選択",
+      "body": "既存のワークスペースメンバーを選んでください。譲渡後、あなたは管理者になります。",
+      "newOwner": "新しいオーナー",
+      "placeholder": "ワークスペースのメンバーを選択",
+      "candidate": "{{name}} · {{role}}",
+      "confirmTitle": "{{name}} にオーナー権限を譲渡しますか？",
+      "confirmBody": "{{name}} が {{workspace}} のオーナーになり、あなたは管理者になります。",
+      "submit": "オーナー権限を譲渡",
+      "transferringTitle": "オーナー権限を譲渡しています…",
+      "transferringBody": "このウィンドウを開いたままにしてください。譲渡が完了するとオーナーが変わります。",
+      "transferring": "譲渡中…",
+      "failed": "オーナー権限を譲渡できませんでした。あなたは引き続きオーナーです。もう一度お試しください。",
+      "noCandidates": "オーナー権限を譲渡する前に、{{workspace}} に誰かを招待してください。",
+      "done": "ワークスペースのオーナー権限を {{name}} に譲渡しました。あなたは管理者になりました。"
     }
   },
   "dictationTranslation": {

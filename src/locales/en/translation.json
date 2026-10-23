@@ -3125,6 +3125,22 @@
         "title": "{{name}} was deleted"
       },
       "tryAgain": "Try again"
+    },
+    "transfer": {
+      "title": "Choose a new Owner",
+      "body": "Choose an existing workspace member. You'll become an Admin after the transfer.",
+      "newOwner": "New Owner",
+      "placeholder": "Choose a workspace member",
+      "candidate": "{{name}} · {{role}}",
+      "confirmTitle": "Transfer ownership to {{name}}?",
+      "confirmBody": "{{name}} will become the Owner of {{workspace}}. You'll become an Admin.",
+      "submit": "Transfer ownership",
+      "transferringTitle": "Transferring ownership…",
+      "transferringBody": "Keep this window open. Ownership will change when the transfer completes.",
+      "transferring": "Transferring…",
+      "failed": "Couldn't transfer ownership. You're still the Owner. Try again.",
+      "noCandidates": "Invite someone to {{workspace}} before transferring ownership.",
+      "done": "Workspace ownership transferred to {{name}}. You're now an Admin."
     }
   },
   "chat": {

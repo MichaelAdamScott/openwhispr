@@ -4863,6 +4863,22 @@
         "title": "{{name}} 已刪除"
       },
       "tryAgain": "重試"
+    },
+    "transfer": {
+      "title": "選擇新的擁有者",
+      "body": "選擇一位現有的工作區成員。轉讓後你將成為管理員。",
+      "newOwner": "新擁有者",
+      "placeholder": "選擇工作區成員",
+      "candidate": "{{name}} · {{role}}",
+      "confirmTitle": "將擁有權轉讓給 {{name}}？",
+      "confirmBody": "{{name}} 將成為 {{workspace}} 的擁有者，你將成為管理員。",
+      "submit": "轉讓擁有權",
+      "transferringTitle": "正在轉讓擁有權…",
+      "transferringBody": "請保持此視窗開啟。轉讓完成後，擁有權才會變更。",
+      "transferring": "正在轉讓…",
+      "failed": "無法轉讓擁有權。你仍是擁有者，請再試一次。",
+      "noCandidates": "轉讓擁有權之前，請先邀請其他人加入 {{workspace}}。",
+      "done": "工作區擁有權已轉讓給 {{name}}。你現在是管理員。"
     }
   },
   "dictationTranslation": {

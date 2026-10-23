@@ -3125,6 +3125,22 @@
         "title": "{{name}} wurde gelöscht"
       },
       "tryAgain": "Erneut versuchen"
+    },
+    "transfer": {
+      "title": "Neuen Inhaber wählen",
+      "body": "Wähle ein bestehendes Mitglied des Workspace. Nach der Übertragung wirst du Administrator.",
+      "newOwner": "Neuer Inhaber",
+      "placeholder": "Mitglied des Workspace wählen",
+      "candidate": "{{name}} · {{role}}",
+      "confirmTitle": "Inhaberschaft an {{name}} übertragen?",
+      "confirmBody": "{{name}} wird Inhaber von {{workspace}}. Du wirst Administrator.",
+      "submit": "Inhaberschaft übertragen",
+      "transferringTitle": "Inhaberschaft wird übertragen…",
+      "transferringBody": "Lass dieses Fenster geöffnet. Die Inhaberschaft ändert sich, sobald die Übertragung abgeschlossen ist.",
+      "transferring": "Wird übertragen…",
+      "failed": "Die Inhaberschaft konnte nicht übertragen werden. Du bist weiterhin Inhaber. Versuche es erneut.",
+      "noCandidates": "Lade jemanden in {{workspace}} ein, bevor du die Inhaberschaft überträgst.",
+      "done": "Inhaberschaft des Workspace an {{name}} übertragen. Du bist jetzt Administrator."
     }
   },
   "chat": {

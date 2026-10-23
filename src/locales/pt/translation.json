@@ -4863,6 +4863,22 @@
         "title": "{{name}} foi excluído"
       },
       "tryAgain": "Tentar novamente"
+    },
+    "transfer": {
+      "title": "Escolha um novo proprietário",
+      "body": "Escolha um membro existente do espaço de trabalho. Você se tornará administrador após a transferência.",
+      "newOwner": "Novo proprietário",
+      "placeholder": "Escolha um membro do espaço de trabalho",
+      "candidate": "{{name}} · {{role}}",
+      "confirmTitle": "Transferir a propriedade para {{name}}?",
+      "confirmBody": "{{name}} se tornará o proprietário de {{workspace}}. Você se tornará administrador.",
+      "submit": "Transferir propriedade",
+      "transferringTitle": "Transferindo a propriedade…",
+      "transferringBody": "Mantenha esta janela aberta. A propriedade mudará quando a transferência for concluída.",
+      "transferring": "Transferindo…",
+      "failed": "Não foi possível transferir a propriedade. Você continua sendo o proprietário. Tente novamente.",
+      "noCandidates": "Convide alguém para {{workspace}} antes de transferir a propriedade.",
+      "done": "Propriedade do espaço de trabalho transferida para {{name}}. Agora você é administrador."
     }
   },
   "dictationTranslation": {

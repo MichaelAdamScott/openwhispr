@@ -4863,6 +4863,22 @@
         "title": "Se eliminó {{name}}"
       },
       "tryAgain": "Intentar de nuevo"
+    },
+    "transfer": {
+      "title": "Elige un nuevo propietario",
+      "body": "Elige a un miembro existente del espacio de trabajo. Pasarás a ser administrador tras la transferencia.",
+      "newOwner": "Nuevo propietario",
+      "placeholder": "Elige a un miembro del espacio de trabajo",
+      "candidate": "{{name}} · {{role}}",
+      "confirmTitle": "¿Transferir la propiedad a {{name}}?",
+      "confirmBody": "{{name}} será el propietario de {{workspace}}. Tú pasarás a ser administrador.",
+      "submit": "Transferir propiedad",
+      "transferringTitle": "Transfiriendo la propiedad…",
+      "transferringBody": "Mantén esta ventana abierta. La propiedad cambiará cuando termine la transferencia.",
+      "transferring": "Transfiriendo…",
+      "failed": "No se pudo transferir la propiedad. Sigues siendo el propietario. Inténtalo de nuevo.",
+      "noCandidates": "Invita a alguien a {{workspace}} antes de transferir la propiedad.",
+      "done": "Propiedad del espacio de trabajo transferida a {{name}}. Ahora eres administrador."
     }
   },
   "dictationTranslation": {
