@@ -3147,6 +3147,22 @@
       "failed": "Die Inhaberschaft konnte nicht übertragen werden. Du bist weiterhin Inhaber. Versuche es erneut.",
       "noCandidates": "Lade jemanden in {{workspace}} ein, bevor du die Inhaberschaft überträgst.",
       "done": "Inhaberschaft des Workspace an {{name}} übertragen. Du bist jetzt Administrator."
+    },
+    "intro": {
+      "workspace": {
+        "title": "Dein Workspace ist deine Basis",
+        "body": "Alle in deinem Unternehmen arbeiten hier. Deine privaten Notizen bleiben privat, bis du sie teilst."
+      },
+      "teamspaces": {
+        "title": "Notizen in Teamspaces teilen",
+        "body": "Erstelle in einem Workspace einen Teamspace für ein Projekt oder Thema, etwa Kundengespräche. Alle, die du hinzufügst, können seine Notizen lesen und bearbeiten."
+      },
+      "teams": {
+        "title": "Ein ganzes Team auf einmal hinzufügen",
+        "body": "Fasse Personen in einem Team zusammen, etwa Vertrieb, und füge das Team dann in einem Schritt zu jedem Teamspace hinzu."
+      },
+      "getStarted": "Los geht's",
+      "progress": "Schritt {{current}} von {{total}}"
     }
   },
   "chat": {

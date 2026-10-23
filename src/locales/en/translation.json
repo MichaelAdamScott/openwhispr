@@ -3147,6 +3147,22 @@
       "failed": "Couldn't transfer ownership. You're still the Owner. Try again.",
       "noCandidates": "Invite someone to {{workspace}} before transferring ownership.",
       "done": "Workspace ownership transferred to {{name}}. You're now an Admin."
+    },
+    "intro": {
+      "workspace": {
+        "title": "Your workspace is home base",
+        "body": "Everyone at your company works here. Your private notes stay private until you share them."
+      },
+      "teamspaces": {
+        "title": "Share notes in teamspaces",
+        "body": "Within a workspace, create a teamspace for a project or topic, like Customer Calls. Everyone you add can read and edit its notes."
+      },
+      "teams": {
+        "title": "Add a whole team at once",
+        "body": "Group people into a team, like Sales, then add the team to any teamspace in one step."
+      },
+      "getStarted": "Get started",
+      "progress": "Step {{current}} of {{total}}"
     }
   },
   "chat": {

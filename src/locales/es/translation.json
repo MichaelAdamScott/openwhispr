@@ -4885,6 +4885,22 @@
       "failed": "No se pudo transferir la propiedad. Sigues siendo el propietario. Inténtalo de nuevo.",
       "noCandidates": "Invita a alguien a {{workspace}} antes de transferir la propiedad.",
       "done": "Propiedad del espacio de trabajo transferida a {{name}}. Ahora eres administrador."
+    },
+    "intro": {
+      "workspace": {
+        "title": "Tu espacio de trabajo es tu base",
+        "body": "Todos en tu empresa trabajan aquí. Tus notas privadas siguen siendo privadas hasta que las compartas."
+      },
+      "teamspaces": {
+        "title": "Comparte notas en teamspaces",
+        "body": "Dentro de un espacio de trabajo, crea un teamspace para un proyecto o tema, como Llamadas con clientes. Todas las personas que añadas pueden leer y editar sus notas."
+      },
+      "teams": {
+        "title": "Añade un equipo entero de una vez",
+        "body": "Agrupa a personas en un equipo, como Ventas, y luego añade el equipo a cualquier teamspace en un solo paso."
+      },
+      "getStarted": "Empezar",
+      "progress": "Paso {{current}} de {{total}}"
     }
   },
   "dictationTranslation": {

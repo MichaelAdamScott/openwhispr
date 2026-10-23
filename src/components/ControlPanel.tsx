@@ -1053,6 +1053,7 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
             isOverLimit={usage?.isOverLimit ?? false}
             isSignedIn={isSignedIn}
             upsell={upsell}
+            workspaceIntroAllowed={!showSettings}
             updateAction={
               !updateStatus.isDevelopment &&
               (updateStatus.updateAvailable ||

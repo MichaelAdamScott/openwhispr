@@ -4885,6 +4885,22 @@
       "failed": "Impossibile trasferire la proprietà. Sei ancora il proprietario. Riprova.",
       "noCandidates": "Invita qualcuno in {{workspace}} prima di trasferire la proprietà.",
       "done": "Proprietà dell'area di lavoro trasferita a {{name}}. Ora sei amministratore."
+    },
+    "intro": {
+      "workspace": {
+        "title": "La tua area di lavoro è la tua base",
+        "body": "Tutti nella tua azienda lavorano qui. Le tue note private restano private finché non le condividi."
+      },
+      "teamspaces": {
+        "title": "Condividi note nei teamspace",
+        "body": "All'interno di un'area di lavoro, crea un teamspace per un progetto o un argomento, come Chiamate con i clienti. Tutte le persone che aggiungi possono leggerne e modificarne le note."
+      },
+      "teams": {
+        "title": "Aggiungi un intero team in una volta",
+        "body": "Raggruppa le persone in un team, come Vendite, poi aggiungi il team a qualsiasi teamspace in un solo passaggio."
+      },
+      "getStarted": "Inizia",
+      "progress": "Passaggio {{current}} di {{total}}"
     }
   },
   "dictationTranslation": {

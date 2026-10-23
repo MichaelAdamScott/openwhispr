@@ -32,6 +32,16 @@ const MOCKS = {
   `,
   "/services/WorkspacesService": `export const WorkspacesService = { listMembers: async () => [] };`,
   "/CreateWorkspaceDialog": `export default function CreateWorkspaceDialog() { return null; }`,
+  "/stores/policyStore": `
+    export const usePolicyStore = (selector) => selector({ accountId: globalThis.__switcherState.accountId });
+  `,
+  // Records whether the switcher asks the intro to show, and for which workspace.
+  "/workspace/WorkspaceIntroDialog": `
+    export function WorkspaceIntroDialog({ open, workspaceName, onFinish }) {
+      globalThis.__intro = { open, workspaceName, onFinish };
+      return null;
+    }
+  `,
   // Records what the switcher hands the menu so a test can read placement and open state.
   "/ui/dropdown-menu": `
     import React from "react";
@@ -56,12 +66,15 @@ async function loadSwitcher(t) {
   t.after(() => {
     delete globalThis.__menu;
     delete globalThis.__switcherState;
+    delete globalThis.__intro;
   });
   globalThis.__menu = {};
   globalThis.__switcherState = {
     workspaces: [{ id: "acme", name: "Acme Studio", role: "owner" }],
     activeWorkspaceId: "acme",
+    accountId: "user-1",
   };
+  globalThis.__intro = null;
   installBrowserGlobals(t);
   const vite = await createRendererServer(t, {
     cachePrefix: "openwhispr-switcher-placement-",
@@ -129,4 +142,34 @@ test("the full trigger shows the workspace name", async (t) => {
   const markup = render({});
 
   assert.match(markup, />Acme Studio</);
+});
+
+test("the sidebar shows the intro for an unseen workspace once allowed", async (t) => {
+  const render = await loadSwitcher(t);
+
+  render({});
+  assert.equal(globalThis.__intro.open, false, "not without introAllowed");
+
+  render({ introAllowed: true });
+  assert.equal(globalThis.__intro.open, true);
+  assert.equal(globalThis.__intro.workspaceName, "Acme Studio");
+});
+
+test("the settings picker never shows the intro", async (t) => {
+  const render = await loadSwitcher(t);
+
+  render({ placement: "settings", introAllowed: true });
+
+  assert.equal(globalThis.__intro.open, false);
+});
+
+test("finishing the intro marks it seen for this account and workspace", async (t) => {
+  const render = await loadSwitcher(t);
+
+  render({ introAllowed: true });
+  globalThis.__intro.onFinish();
+
+  assert.equal(localStorage.getItem("workspaceIntroVersion:user-1:acme"), "1");
+  render({ introAllowed: true });
+  assert.equal(globalThis.__intro.open, false);
 });

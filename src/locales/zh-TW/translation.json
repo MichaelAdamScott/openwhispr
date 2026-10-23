@@ -4885,6 +4885,22 @@
       "failed": "無法轉讓擁有權。你仍是擁有者，請再試一次。",
       "noCandidates": "轉讓擁有權之前，請先邀請其他人加入 {{workspace}}。",
       "done": "工作區擁有權已轉讓給 {{name}}。你現在是管理員。"
+    },
+    "intro": {
+      "workspace": {
+        "title": "工作區是你的大本營",
+        "body": "公司裡的每個人都在這裡工作。你的私人筆記在你分享之前始終保持私密。"
+      },
+      "teamspaces": {
+        "title": "在 Teamspace 中分享筆記",
+        "body": "在工作區中，為專案或主題（例如「客戶通話」）建立 Teamspace。你新增的每個人都可以閱讀和編輯其中的筆記。"
+      },
+      "teams": {
+        "title": "一次新增整個團隊",
+        "body": "將成員歸入一個團隊（例如「業務」），然後一步將該團隊新增到任何 Teamspace。"
+      },
+      "getStarted": "開始使用",
+      "progress": "第 {{current}} 步，共 {{total}} 步"
     }
   },
   "dictationTranslation": {

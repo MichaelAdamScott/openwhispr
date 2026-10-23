@@ -17,6 +17,13 @@ import { useWorkspace } from "../hooks/useWorkspace";
 import { useWorkspaceStore } from "../stores/workspaceStore";
 import { WorkspacesService } from "../services/WorkspacesService";
 import { resolveWorkspaceSwitcher } from "../lib/workspaceSwitcher";
+import {
+  markWorkspaceIntroSeen,
+  shouldShowWorkspaceIntro,
+  workspaceIntroKey,
+} from "../lib/workspaceIntro";
+import { usePolicyStore } from "../stores/policyStore";
+import { WorkspaceIntroDialog } from "./workspace/WorkspaceIntroDialog";
 import type { Workspace } from "../types/electron";
 
 const InviteTeammateDialog = React.lazy(() => import("./InviteTeammateDialog"));
@@ -47,6 +54,7 @@ export default function WorkspaceSwitcher({
   compact = false,
   open,
   onOpenChange,
+  introAllowed = false,
 }: WorkspaceSwitcherProps = {}): React.ReactElement | null {
   const { t } = useTranslation();
   const { isSignedIn } = useAuth();
@@ -62,6 +70,9 @@ export default function WorkspaceSwitcher({
   const [createOpen, setCreateOpen] = useState(false);
   // Right after creating a workspace the invite is optional, so it offers Skip.
   const [invite, setInvite] = useState<{ workspace: Workspace; afterCreate: boolean } | null>(null);
+  const accountId = usePolicyStore((s) => s.accountId);
+  // Hides the intro once finished even when storage can't remember it, so it can't reopen at once.
+  const [finishedIntroKey, setFinishedIntroKey] = useState<string | null>(null);
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
   const memberCountRequestedAt = useRef<Record<string, number>>({});
 
@@ -72,6 +83,20 @@ export default function WorkspaceSwitcher({
     workspaces,
     activeWorkspaceId,
   });
+
+  // Derived on every render, so it follows the active workspace, the account and every modal below.
+  const introKey =
+    accountId && state.kind === "workspace" ? workspaceIntroKey(accountId, state.current.id) : null;
+  const showIntro =
+    introKey !== null &&
+    introKey !== finishedIntroKey &&
+    shouldShowWorkspaceIntro({
+      storage: localStorage,
+      accountId,
+      switcher: state,
+      // Settings has its own picker, and the create → invite chain owns the screen until it ends.
+      blocked: placement !== "sidebar" || !introAllowed || createOpen || invite !== null,
+    });
 
   if (state.kind === "hidden") return null;
 
@@ -270,6 +295,17 @@ export default function WorkspaceSwitcher({
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {current && (
+        <WorkspaceIntroDialog
+          open={showIntro}
+          workspaceName={current.name}
+          onFinish={() => {
+            if (!accountId) return;
+            markWorkspaceIntroSeen(localStorage, accountId, current.id);
+            setFinishedIntroKey(workspaceIntroKey(accountId, current.id));
+          }}
+        />
+      )}
       <CreateWorkspaceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}

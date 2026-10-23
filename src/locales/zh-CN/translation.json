@@ -4885,6 +4885,22 @@
       "failed": "无法转让所有权。你仍是所有者，请重试。",
       "noCandidates": "转让所有权之前，请先邀请其他人加入 {{workspace}}。",
       "done": "工作区所有权已转让给 {{name}}。你现在是管理员。"
+    },
+    "intro": {
+      "workspace": {
+        "title": "工作区是你的大本营",
+        "body": "公司里的每个人都在这里工作。你的私人笔记在你分享之前始终保持私密。"
+      },
+      "teamspaces": {
+        "title": "在 Teamspace 中共享笔记",
+        "body": "在工作区中，为项目或主题（例如“客户通话”）创建 Teamspace。你添加的每个人都可以阅读和编辑其中的笔记。"
+      },
+      "teams": {
+        "title": "一次添加整个团队",
+        "body": "将成员归入一个团队（例如“销售”），然后一步将该团队添加到任意 Teamspace。"
+      },
+      "getStarted": "开始使用",
+      "progress": "第 {{current}} 步，共 {{total}} 步"
     }
   },
   "dictationTranslation": {

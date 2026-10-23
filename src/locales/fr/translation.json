@@ -3147,6 +3147,22 @@
       "failed": "Impossible de transférer la propriété. Vous êtes toujours propriétaire. Réessayez.",
       "noCandidates": "Invitez quelqu'un dans {{workspace}} avant de transférer la propriété.",
       "done": "Propriété de l'espace transférée à {{name}}. Vous êtes maintenant administrateur."
+    },
+    "intro": {
+      "workspace": {
+        "title": "Votre espace de travail est votre point d'ancrage",
+        "body": "Toute votre entreprise travaille ici. Vos notes privées restent privées jusqu'à ce que vous les partagiez."
+      },
+      "teamspaces": {
+        "title": "Partagez des notes dans des teamspaces",
+        "body": "Dans un espace de travail, créez un teamspace pour un projet ou un sujet, comme Appels clients. Toutes les personnes que vous ajoutez peuvent lire et modifier ses notes."
+      },
+      "teams": {
+        "title": "Ajoutez toute une équipe d'un coup",
+        "body": "Regroupez des personnes dans une équipe, comme Ventes, puis ajoutez l'équipe à n'importe quel teamspace en une seule étape."
+      },
+      "getStarted": "Commencer",
+      "progress": "Étape {{current}} sur {{total}}"
     }
   },
   "chat": {
