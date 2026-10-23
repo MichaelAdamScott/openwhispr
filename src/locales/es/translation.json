@@ -4835,6 +4835,34 @@
       "errorTitle": "No se pudo aceptar la invitación",
       "sentTo": "Invitación enviada a {{email}}",
       "wrongAccount": "Esta invitación se envió a {{email}}. Has iniciado sesión como {{current}}."
+    },
+    "exit": {
+      "leave": {
+        "title": "¿Salir de {{name}}?",
+        "body": "Perderás el acceso a este espacio de trabajo, a sus equipos y a sus espacios de equipo. Un administrador del espacio de trabajo puede volver a invitarte.",
+        "failed": "No se pudo salir de {{name}}. Comprueba tu conexión e inténtalo de nuevo."
+      },
+      "left": {
+        "title": "Saliste de {{name}}"
+      },
+      "chooseAnother": "Elige otro espacio de trabajo para continuar.",
+      "chooseWorkspace": "Elegir espacio de trabajo",
+      "delete": {
+        "title": "¿Eliminar {{name}}?",
+        "body": "Esto elimina de forma permanente el espacio de trabajo, sus notas, archivos, equipos y espacios de equipo para todos. No se puede deshacer."
+      },
+      "deleting": {
+        "title": "Eliminando {{name}}…",
+        "body": "Mantén esta ventana abierta mientras se elimina el espacio de trabajo."
+      },
+      "deleteFailed": {
+        "title": "No se pudo eliminar el espacio de trabajo",
+        "body": "{{name}} sigue disponible. Comprueba tu conexión e inténtalo de nuevo."
+      },
+      "deleted": {
+        "title": "Se eliminó {{name}}"
+      },
+      "tryAgain": "Intentar de nuevo"
     }
   },
   "dictationTranslation": {

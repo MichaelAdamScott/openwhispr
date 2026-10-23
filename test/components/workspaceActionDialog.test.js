@@ -7,6 +7,7 @@ const { createRendererServer, installBrowserGlobals } = require("../lib/renderer
 async function loadDialog(t) {
   t.after(() => {
     delete globalThis.__onOpenChange;
+    delete globalThis.__onOpenAutoFocus;
   });
   installBrowserGlobals(t);
   const vite = await createRendererServer(t, {
@@ -19,7 +20,10 @@ async function loadDialog(t) {
           globalThis.__onOpenChange = onOpenChange;
           return React.createElement("div", null, children);
         };
-        export const DialogContent = ({ children }) => React.createElement("div", null, children);
+        export const DialogContent = ({ children, onOpenAutoFocus }) => {
+          globalThis.__onOpenAutoFocus = onOpenAutoFocus;
+          return React.createElement("div", null, children);
+        };
         export const DialogTitle = ({ children }) => React.createElement("h2", null, children);
         export const DialogDescription = ({ children }) => React.createElement("p", null, children);
       `,
@@ -106,4 +110,28 @@ test("omitting cancelLabel renders no Cancel button", async (t) => {
   const markup = render({ cancelLabel: undefined });
 
   assert.equal((markup.match(/<button/g) ?? []).length, 1);
+});
+
+test("a destructive dialog moves initial focus off the primary", async (t) => {
+  const { render } = await loadDialog(t);
+  const destructive = { label: "Leave workspace", onClick: () => {}, tone: "destructive" };
+  const openEvent = () => {
+    const event = { prevented: false, preventDefault: () => (event.prevented = true) };
+    return event;
+  };
+
+  // The handler takes over Radix's default (first focusable = the primary), so
+  // Enter on a fresh dialog can't confirm a delete or leave.
+  render({ primary: destructive });
+  const event = openEvent();
+  globalThis.__onOpenAutoFocus(event);
+  assert.equal(event.prevented, true);
+
+  // Without a Cancel to land on, or with a non-destructive primary, Radix keeps its default.
+  render({ primary: destructive, cancelLabel: undefined });
+  assert.equal(globalThis.__onOpenAutoFocus, undefined);
+  render();
+  assert.equal(globalThis.__onOpenAutoFocus, undefined);
+  render({ primary: destructive, busy: true });
+  assert.equal(globalThis.__onOpenAutoFocus, undefined);
 });

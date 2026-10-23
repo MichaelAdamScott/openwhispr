@@ -3097,6 +3097,34 @@
       "errorTitle": "Einladung konnte nicht angenommen werden",
       "sentTo": "Einladung gesendet an {{email}}",
       "wrongAccount": "Diese Einladung wurde an {{email}} gesendet. Sie sind als {{current}} angemeldet."
+    },
+    "exit": {
+      "leave": {
+        "title": "{{name}} verlassen?",
+        "body": "Sie verlieren den Zugriff auf diesen Workspace, seine Teams und seine Teamspaces. Ein Workspace-Admin kann Sie wieder einladen.",
+        "failed": "{{name}} konnte nicht verlassen werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+      },
+      "left": {
+        "title": "Sie haben {{name}} verlassen"
+      },
+      "chooseAnother": "Wählen Sie einen anderen Workspace, um fortzufahren.",
+      "chooseWorkspace": "Workspace auswählen",
+      "delete": {
+        "title": "{{name}} löschen?",
+        "body": "Dadurch werden der Workspace, seine Notizen, Dateien, Teams und Teamspaces für alle dauerhaft gelöscht. Das kann nicht rückgängig gemacht werden."
+      },
+      "deleting": {
+        "title": "{{name}} wird gelöscht…",
+        "body": "Lassen Sie dieses Fenster geöffnet, während der Workspace gelöscht wird."
+      },
+      "deleteFailed": {
+        "title": "Workspace konnte nicht gelöscht werden",
+        "body": "{{name}} ist weiterhin verfügbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+      },
+      "deleted": {
+        "title": "{{name}} wurde gelöscht"
+      },
+      "tryAgain": "Erneut versuchen"
     }
   },
   "chat": {

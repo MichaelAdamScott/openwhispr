@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from "react";
+import { useRef, type ReactElement, type ReactNode } from "react";
 import { Info, Trash2 } from "../icons";
 import { cn } from "../lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
@@ -41,6 +41,8 @@ export function WorkspaceActionDialog({
   onDismiss,
 }: WorkspaceActionDialogProps): ReactElement {
   const Icon = icon === "trash" ? Trash2 : Info;
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const showCancel = Boolean(cancelLabel) && !busy;
 
   // A running leave, delete or transfer can't be taken back, so Esc and an
   // overlay click must not close the window that is reporting it.
@@ -48,10 +50,21 @@ export function WorkspaceActionDialog({
     if (!nextOpen && !busy) onDismiss();
   };
 
+  // Radix focuses the first control, which here is the primary. Starting on
+  // Cancel keeps a stray Enter from confirming a delete or leave.
+  const focusCancelOnOpen =
+    primary.tone === "destructive" && showCancel
+      ? (event: Event): void => {
+          event.preventDefault();
+          cancelRef.current?.focus();
+        }
+      : undefined;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         hideCloseButton
+        onOpenAutoFocus={focusCancelOnOpen}
         className="w-[420px] max-w-[calc(100vw-32px)] items-stretch gap-7 rounded-[28px] p-5 sm:max-w-[420px]"
       >
         <div className="flex flex-col items-center gap-3 text-center">
@@ -86,8 +99,9 @@ export function WorkspaceActionDialog({
           >
             {primary.label}
           </button>
-          {cancelLabel && !busy ? (
+          {showCancel ? (
             <button
+              ref={cancelRef}
               type="button"
               onClick={onDismiss}
               className={cn(

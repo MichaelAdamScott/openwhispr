@@ -4835,6 +4835,34 @@
       "errorTitle": "无法接受邀请",
       "sentTo": "邀请已发送至 {{email}}",
       "wrongAccount": "此邀请发送给了 {{email}}，而你当前登录的是 {{current}}。"
+    },
+    "exit": {
+      "leave": {
+        "title": "退出 {{name}}？",
+        "body": "你将失去对此工作区、其团队和团队空间的访问权限。工作区管理员可以重新邀请你。",
+        "failed": "无法退出 {{name}}。请检查网络连接后重试。"
+      },
+      "left": {
+        "title": "你已退出 {{name}}"
+      },
+      "chooseAnother": "选择另一个工作区以继续。",
+      "chooseWorkspace": "选择工作区",
+      "delete": {
+        "title": "删除 {{name}}？",
+        "body": "这将为所有人永久删除该工作区及其笔记、文件、团队和团队空间，且无法撤销。"
+      },
+      "deleting": {
+        "title": "正在删除 {{name}}…",
+        "body": "工作区删除期间请保持此窗口打开。"
+      },
+      "deleteFailed": {
+        "title": "无法删除工作区",
+        "body": "{{name}} 仍然可用。请检查网络连接后重试。"
+      },
+      "deleted": {
+        "title": "{{name}} 已删除"
+      },
+      "tryAgain": "重试"
     }
   },
   "dictationTranslation": {

@@ -4835,6 +4835,34 @@
       "errorTitle": "Impossibile accettare l'invito",
       "sentTo": "Invito inviato a {{email}}",
       "wrongAccount": "Questo invito è stato inviato a {{email}}. Hai effettuato l'accesso come {{current}}."
+    },
+    "exit": {
+      "leave": {
+        "title": "Abbandonare {{name}}?",
+        "body": "Perderai l'accesso a questa area di lavoro, ai suoi team e ai suoi spazi team. Un amministratore dell'area di lavoro può invitarti di nuovo.",
+        "failed": "Impossibile abbandonare {{name}}. Controlla la connessione e riprova."
+      },
+      "left": {
+        "title": "Hai abbandonato {{name}}"
+      },
+      "chooseAnother": "Scegli un'altra area di lavoro per continuare.",
+      "chooseWorkspace": "Scegli area di lavoro",
+      "delete": {
+        "title": "Eliminare {{name}}?",
+        "body": "Questo elimina definitivamente l'area di lavoro, le sue note, i file, i team e gli spazi team per tutti. Non può essere annullato."
+      },
+      "deleting": {
+        "title": "Eliminazione di {{name}}…",
+        "body": "Tieni aperta questa finestra mentre l'area di lavoro viene eliminata."
+      },
+      "deleteFailed": {
+        "title": "Impossibile eliminare l'area di lavoro",
+        "body": "{{name}} è ancora disponibile. Controlla la connessione e riprova."
+      },
+      "deleted": {
+        "title": "{{name}} è stata eliminata"
+      },
+      "tryAgain": "Riprova"
     }
   },
   "dictationTranslation": {

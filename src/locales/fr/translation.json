@@ -3097,6 +3097,34 @@
       "errorTitle": "Impossible d'accepter l'invitation",
       "sentTo": "Invitation envoyée à {{email}}",
       "wrongAccount": "Cette invitation a été envoyée à {{email}}. Vous êtes connecté en tant que {{current}}."
+    },
+    "exit": {
+      "leave": {
+        "title": "Quitter {{name}} ?",
+        "body": "Vous perdrez l'accès à cet espace, à ses équipes et à ses espaces d'équipe. Un administrateur de l'espace pourra vous réinviter.",
+        "failed": "Impossible de quitter {{name}}. Vérifiez votre connexion et réessayez."
+      },
+      "left": {
+        "title": "Vous avez quitté {{name}}"
+      },
+      "chooseAnother": "Choisissez un autre espace pour continuer.",
+      "chooseWorkspace": "Choisir un espace",
+      "delete": {
+        "title": "Supprimer {{name}} ?",
+        "body": "Cela supprime définitivement l'espace, ses notes, ses fichiers, ses équipes et ses espaces d'équipe pour tout le monde. Cette action est irréversible."
+      },
+      "deleting": {
+        "title": "Suppression de {{name}}…",
+        "body": "Gardez cette fenêtre ouverte pendant la suppression de l'espace."
+      },
+      "deleteFailed": {
+        "title": "Impossible de supprimer l'espace",
+        "body": "{{name}} est toujours disponible. Vérifiez votre connexion et réessayez."
+      },
+      "deleted": {
+        "title": "{{name}} a été supprimé"
+      },
+      "tryAgain": "Réessayer"
     }
   },
   "chat": {

@@ -4835,6 +4835,34 @@
       "errorTitle": "無法接受邀請",
       "sentTo": "邀請已傳送至 {{email}}",
       "wrongAccount": "此邀請是傳送給 {{email}} 的。你目前以 {{current}} 的身分登入。"
+    },
+    "exit": {
+      "leave": {
+        "title": "離開 {{name}}？",
+        "body": "你將失去此工作區、其團隊與團隊空間的存取權。工作區管理員可以再次邀請你。",
+        "failed": "無法離開 {{name}}。請檢查網路連線後再試一次。"
+      },
+      "left": {
+        "title": "你已離開 {{name}}"
+      },
+      "chooseAnother": "請選擇另一個工作區以繼續。",
+      "chooseWorkspace": "選擇工作區",
+      "delete": {
+        "title": "刪除 {{name}}？",
+        "body": "這將為所有人永久刪除該工作區及其筆記、檔案、團隊與團隊空間，且無法復原。"
+      },
+      "deleting": {
+        "title": "正在刪除 {{name}}…",
+        "body": "工作區刪除期間請保持此視窗開啟。"
+      },
+      "deleteFailed": {
+        "title": "無法刪除工作區",
+        "body": "{{name}} 仍可使用。請檢查網路連線後再試一次。"
+      },
+      "deleted": {
+        "title": "{{name}} 已刪除"
+      },
+      "tryAgain": "重試"
     }
   },
   "dictationTranslation": {

@@ -4835,6 +4835,34 @@
       "errorTitle": "Não foi possível aceitar o convite",
       "sentTo": "Convite enviado para {{email}}",
       "wrongAccount": "Este convite foi enviado para {{email}}. Você está conectado como {{current}}."
+    },
+    "exit": {
+      "leave": {
+        "title": "Sair de {{name}}?",
+        "body": "Você perderá o acesso a este espaço de trabalho, às equipes e aos espaços de equipe dele. Um administrador do espaço de trabalho pode convidar você de volta.",
+        "failed": "Não foi possível sair de {{name}}. Verifique sua conexão e tente novamente."
+      },
+      "left": {
+        "title": "Você saiu de {{name}}"
+      },
+      "chooseAnother": "Escolha outro espaço de trabalho para continuar.",
+      "chooseWorkspace": "Escolher espaço de trabalho",
+      "delete": {
+        "title": "Excluir {{name}}?",
+        "body": "Isso exclui permanentemente o espaço de trabalho, as notas, os arquivos, as equipes e os espaços de equipe dele para todos. Não é possível desfazer."
+      },
+      "deleting": {
+        "title": "Excluindo {{name}}…",
+        "body": "Mantenha esta janela aberta enquanto o espaço de trabalho é excluído."
+      },
+      "deleteFailed": {
+        "title": "Não foi possível excluir o espaço de trabalho",
+        "body": "{{name}} continua disponível. Verifique sua conexão e tente novamente."
+      },
+      "deleted": {
+        "title": "{{name}} foi excluído"
+      },
+      "tryAgain": "Tentar novamente"
     }
   },
   "dictationTranslation": {

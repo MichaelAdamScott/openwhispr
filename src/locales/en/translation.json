@@ -3097,6 +3097,34 @@
       "errorTitle": "Couldn't accept invitation",
       "sentTo": "Invitation sent to {{email}}",
       "wrongAccount": "This invitation was sent to {{email}}. You're signed in as {{current}}."
+    },
+    "exit": {
+      "leave": {
+        "title": "Leave {{name}}?",
+        "body": "You'll lose access to this workspace, its teams, and its teamspaces. A workspace admin can invite you back.",
+        "failed": "Couldn't leave {{name}}. Check your connection and try again."
+      },
+      "left": {
+        "title": "You left {{name}}"
+      },
+      "chooseAnother": "Choose another workspace to continue.",
+      "chooseWorkspace": "Choose workspace",
+      "delete": {
+        "title": "Delete {{name}}?",
+        "body": "This permanently deletes the workspace, its notes, files, teams, and teamspaces for everyone. This can't be undone."
+      },
+      "deleting": {
+        "title": "Deleting {{name}}…",
+        "body": "Keep this window open while the workspace is deleted."
+      },
+      "deleteFailed": {
+        "title": "Couldn't delete workspace",
+        "body": "{{name}} is still available. Check your connection and try again."
+      },
+      "deleted": {
+        "title": "{{name}} was deleted"
+      },
+      "tryAgain": "Try again"
     }
   },
   "chat": {
