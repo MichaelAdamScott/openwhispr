@@ -16,7 +16,15 @@ import SettingsWorkspaceFrame from "./SettingsWorkspaceFrame";
 import { useSettingsWorkspace } from "./useSettingsWorkspace";
 import type { Workspace } from "../../types/electron";
 
-export default function WorkspaceGeneralSection(): React.ReactElement | null {
+interface WorkspaceGeneralSectionProps {
+  /** Opens the workspace picker in the Settings nav; the redesigned General page uses it. */
+  onChooseWorkspace?: () => void;
+}
+
+export default function WorkspaceGeneralSection(
+  // Declared ahead of the General redesign, which consumes it.
+  _props: WorkspaceGeneralSectionProps
+): React.ReactElement | null {
   const state = useSettingsWorkspace();
   return (
     <SettingsWorkspaceFrame state={state}>

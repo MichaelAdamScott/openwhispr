@@ -19,7 +19,8 @@ import {
   Key,
 } from "./icons";
 import SidebarModal, { type SidebarItem } from "./ui/SidebarModal";
-import SettingsPage, { AccountAvatar } from "./SettingsPage";
+import SettingsPage from "./SettingsPage";
+import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import { useAuth } from "../hooks/useAuth";
 import { workspaceCan } from "../lib/capabilities";
 import {
@@ -58,7 +59,7 @@ export default function SettingsModal({
   initialSection,
 }: SettingsModalProps): React.ReactElement {
   const { t } = useTranslation();
-  const { isSignedIn, user } = useAuth();
+  const { isSignedIn } = useAuth();
   const policyManaged = usePolicyStore((s) => s.managed);
   const { workspaces, activeWorkspaceId, workspacesLoaded } = useWorkspaceStore(
     useShallow((s) => ({
@@ -109,6 +110,8 @@ export default function SettingsModal({
     initialSection ? LEGACY_SUB_TAB[initialSection] : undefined
   );
   const [prevOpen, setPrevOpen] = useState(open);
+  // The picker menu is also opened from the General page's "Choose workspace".
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   if (open && !prevOpen && initialSection) {
     setPrevOpen(open);
@@ -140,18 +143,18 @@ export default function SettingsModal({
       activeSection={activeSection}
       onSectionChange={handleSectionChange}
       header={
-        isSignedIn && user ? (
-          <div className="flex flex-col items-center gap-2 pb-2 text-center">
-            <AccountAvatar image={user.image} name={user.name || t("settingsPage.account.user")} />
-            <div className="min-w-0 w-full">
-              <p dir="auto" className="text-[13px] font-semibold text-foreground truncate">
-                {user.name || t("settingsPage.account.user")}
-              </p>
-              <p className="text-xs text-muted-foreground truncate">
-                <bdi dir="ltr">{user.email}</bdi>
-              </p>
-            </div>
-          </div>
+        signedIn ? (
+          <WorkspaceSwitcher placement="settings" open={pickerOpen} onOpenChange={setPickerOpen} />
+        ) : undefined
+      }
+      compactHeader={
+        signedIn ? (
+          <WorkspaceSwitcher
+            placement="settings"
+            compact
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+          />
         ) : undefined
       }
       notice={
@@ -168,6 +171,7 @@ export default function SettingsModal({
         activeSection={activeSection}
         onNavigateToSection={handleSectionChange}
         initialSubTab={initialSubTab}
+        onChooseWorkspace={() => setPickerOpen(true)}
       />
     </SidebarModal>
   );

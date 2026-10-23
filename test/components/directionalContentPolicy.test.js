@@ -32,10 +32,10 @@ test("dynamic prose and identity values keep their own direction", () => {
     ],
     ["src/components/EmailVerificationStep.tsx", /<span\s+dir="ltr"[^>]*>\s*\{email\}/],
     [
-      "src/components/SettingsModal.tsx",
+      "src/components/SettingsPage.tsx",
       /<p\s+dir="auto"[^>]*>\s*\{user\.name \|\| t\("settingsPage\.account\.user"\)\}/,
     ],
-    ["src/components/SettingsModal.tsx", /<bdi dir="ltr">\{user\.email\}<\/bdi>/],
+    ["src/components/SettingsPage.tsx", /<bdi dir="ltr">\{user\.email\}<\/bdi>/],
     [
       "src/components/settings/WorkspaceMembersTab.tsx",
       /<p\s+dir="auto"[^>]*>\s*\{member\.name \|\| member\.email\}/,

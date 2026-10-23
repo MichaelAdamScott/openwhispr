@@ -23,12 +23,31 @@ const InviteTeammateDialog = React.lazy(() => import("./InviteTeammateDialog"));
 
 const triggerClass =
   "group flex items-center gap-2.5 w-full h-10 px-2 rounded-md text-start outline-none hover:bg-foreground/4 dark:hover:bg-white/4 active:bg-foreground/6 data-[state=open]:bg-foreground/5 dark:data-[state=open]:bg-white/6 focus-visible:ring-1 focus-visible:ring-primary/30 transition-colors duration-150";
+const compactTriggerClass =
+  "group flex items-center justify-center w-9 h-9 rounded-md outline-none hover:bg-foreground/4 dark:hover:bg-white/4 active:bg-foreground/6 data-[state=open]:bg-foreground/5 dark:data-[state=open]:bg-white/6 focus-visible:ring-1 focus-visible:ring-primary/30 transition-colors duration-150";
 const nameClass = "flex-1 min-w-0 truncate text-sm font-medium text-foreground";
 const itemClass = "gap-3 px-2 py-2 text-[13px] rounded-lg";
 // Counting members fetches the whole roster, so each workspace's count is reused for a while.
 const MEMBER_COUNT_TTL_MS = 5 * 60_000;
 
-export default function WorkspaceSwitcher(): React.ReactElement | null {
+interface WorkspaceSwitcherProps {
+  /** "settings" is the picker at the top of the Settings nav, so its menu opens below. */
+  placement?: "sidebar" | "settings";
+  /** Avatar-only trigger, named by aria-label, for the compact Settings rail. */
+  compact?: boolean;
+  /** Controls the menu from outside, e.g. Settings' "Choose workspace". */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Whether the first-use intro may show; honored for the sidebar placement only. */
+  introAllowed?: boolean;
+}
+
+export default function WorkspaceSwitcher({
+  placement = "sidebar",
+  compact = false,
+  open,
+  onOpenChange,
+}: WorkspaceSwitcherProps = {}): React.ReactElement | null {
   const { t } = useTranslation();
   const { isSignedIn } = useAuth();
   const { workspaces, setActive, refresh } = useWorkspace();
@@ -58,10 +77,34 @@ export default function WorkspaceSwitcher(): React.ReactElement | null {
 
   if (state.kind === "loading") {
     return (
-      <div className="flex items-center gap-2.5 h-10 px-2" aria-hidden="true">
+      <div
+        className={cn("flex items-center gap-2.5 h-10 px-2", compact && "justify-center")}
+        aria-hidden="true"
+      >
         <span className="w-7 h-7 rounded-full bg-foreground/6 dark:bg-white/8 animate-pulse" />
-        <span className="h-2.5 w-20 rounded bg-foreground/6 dark:bg-white/8 animate-pulse" />
+        {!compact && (
+          <span className="h-2.5 w-20 rounded bg-foreground/6 dark:bg-white/8 animate-pulse" />
+        )}
       </div>
+    );
+  }
+
+  if (state.kind === "error" && compact) {
+    return (
+      <button
+        type="button"
+        onClick={() => void refresh()}
+        disabled={loading}
+        aria-label={t("settingsPage.workspace.loadError.retry")}
+        title={t("settingsPage.workspace.loadError.title")}
+        className={cn(compactTriggerClass, "disabled:opacity-60")}
+      >
+        {loading ? (
+          <Loader2 size={14} className="animate-spin text-muted-foreground" />
+        ) : (
+          <UserCircle size={24} className="text-foreground/50" />
+        )}
+      </button>
     );
   }
 
@@ -93,8 +136,11 @@ export default function WorkspaceSwitcher(): React.ReactElement | null {
   const current = state.kind === "workspace" ? state.current : null;
   const currentMemberCount = current ? (memberCounts[current.id] ?? null) : null;
 
-  const handleOpenChange = (open: boolean): void => {
-    if (!open || !current) return;
+  const triggerLabel = current ? current.name : t("notes.spaces.personal");
+
+  const handleOpenChange = (nextOpen: boolean): void => {
+    onOpenChange?.(nextOpen);
+    if (!nextOpen || !current) return;
     const workspaceId = current.id;
     const now = Date.now();
     if (now - (memberCountRequestedAt.current[workspaceId] ?? 0) < MEMBER_COUNT_TTL_MS) return;
@@ -110,23 +156,30 @@ export default function WorkspaceSwitcher(): React.ReactElement | null {
 
   return (
     <>
-      <DropdownMenu modal={false} onOpenChange={handleOpenChange}>
-        <DropdownMenuTrigger className={triggerClass}>
+      <DropdownMenu modal={false} open={open} onOpenChange={handleOpenChange}>
+        <DropdownMenuTrigger
+          className={compact ? compactTriggerClass : triggerClass}
+          aria-label={compact ? triggerLabel : undefined}
+        >
           {current ? (
             <MemberAvatar name={current.name} email={null} />
           ) : (
             <UserCircle size={24} className="w-7 shrink-0 text-foreground/50" />
           )}
-          <span dir="auto" className={nameClass}>
-            {current ? current.name : t("notes.spaces.personal")}
-          </span>
-          <ChevronsUpDown
-            size={14}
-            className="shrink-0 text-foreground/45 group-hover:text-foreground/70 transition-colors duration-150"
-          />
+          {!compact && (
+            <>
+              <span dir="auto" className={nameClass}>
+                {triggerLabel}
+              </span>
+              <ChevronsUpDown
+                size={14}
+                className="shrink-0 text-foreground/45 group-hover:text-foreground/70 transition-colors duration-150"
+              />
+            </>
+          )}
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          side="top"
+          side={placement === "settings" ? "bottom" : "top"}
           align="start"
           sideOffset={8}
           // Wider than the sidebar, as in the design, so names and the invite button have room.
