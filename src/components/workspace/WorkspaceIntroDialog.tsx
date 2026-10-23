@@ -214,7 +214,7 @@ export function WorkspaceIntroCard({
   );
 }
 
-// Mounted only while the dialog is open, so every opening starts on step 1.
+// Mounted only while the dialog is open, and keyed by workspace, so every opening starts on step 1.
 function IntroSteps({
   workspaceName,
   onFinish,
@@ -235,26 +235,31 @@ function IntroSteps({
 
 export function WorkspaceIntroDialog({
   open,
+  workspaceId,
   workspaceName,
   onFinish,
 }: {
   open: boolean;
+  workspaceId: string;
   workspaceName: string;
-  onFinish: () => void;
+  /** Called with the workspace the steps were shown for, so a switch mid-intro marks the right one. */
+  onFinish: (workspaceId: string) => void;
 }): ReactElement {
+  const finish = (): void => onFinish(workspaceId);
   return (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
         // Esc and the overlay count as Skip.
-        if (!nextOpen) onFinish();
+        if (!nextOpen) finish();
       }}
     >
       <DialogContent
         hideCloseButton
-        className="w-[500px] max-w-[calc(100vw-32px)] gap-0 overflow-hidden rounded-[28px] p-0 sm:max-w-[500px]"
+        // Scrolls on short windows so Next and Get started stay reachable.
+        className="max-h-[calc(100vh-32px)] w-[500px] max-w-[calc(100vw-32px)] gap-0 overflow-y-auto overflow-x-hidden rounded-[28px] p-0 sm:max-w-[500px]"
       >
-        <IntroSteps workspaceName={workspaceName} onFinish={onFinish} />
+        <IntroSteps key={workspaceId} workspaceName={workspaceName} onFinish={finish} />
       </DialogContent>
     </Dialog>
   );

@@ -72,6 +72,7 @@ import { isRegenerableNoteTitle } from "../../helpers/regenerableNoteTitle";
 import { isMeetingAutoEndEligible } from "../../helpers/meetingRecordingSession";
 import { handleMeetingRecordingRequest } from "../../helpers/meetingRecordingRequest";
 import { markIntroSeen, NOTES_STRUCTURE_INTRO, shouldShowIntro } from "../../lib/versionedIntro";
+import { useModalGate } from "../../stores/modalGateStore";
 import {
   applyNoteDraftMutation,
   collectPendingNoteWrites,
@@ -306,25 +307,18 @@ export default function PersonalNotesView({
     initializeNotesTree();
   }, []);
 
+  // Due once only the notes tree is still loading; the workspace intro waits for it from then on.
+  const structureIntroDue =
+    structureIntroPending &&
+    isOnboardingComplete &&
+    isSignedIn &&
+    teamSpacesAvailable &&
+    !isSidePanelLayout;
+  useModalGate("notesStructureIntroPending", structureIntroDue);
+
   useEffect(() => {
-    if (
-      structureIntroPending &&
-      isOnboardingComplete &&
-      isSignedIn &&
-      teamSpacesAvailable &&
-      !isTreeLoading &&
-      !isSidePanelLayout
-    ) {
-      setShowStructureIntro(true);
-    }
-  }, [
-    structureIntroPending,
-    isOnboardingComplete,
-    isSignedIn,
-    teamSpacesAvailable,
-    isTreeLoading,
-    isSidePanelLayout,
-  ]);
+    if (structureIntroDue && !isTreeLoading) setShowStructureIntro(true);
+  }, [structureIntroDue, isTreeLoading]);
 
   // Arriving via an accepted invitation reopens the structure intro even when
   // this device has already seen it, and even before notes onboarding is done

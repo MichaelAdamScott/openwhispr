@@ -23,6 +23,7 @@ import {
   workspaceIntroKey,
 } from "../lib/workspaceIntro";
 import { usePolicyStore } from "../stores/policyStore";
+import { selectGatedModalOpen, useModalGateStore } from "../stores/modalGateStore";
 import { WorkspaceIntroDialog } from "./workspace/WorkspaceIntroDialog";
 import type { Workspace } from "../types/electron";
 
@@ -71,6 +72,7 @@ export default function WorkspaceSwitcher({
   // Right after creating a workspace the invite is optional, so it offers Skip.
   const [invite, setInvite] = useState<{ workspace: Workspace; afterCreate: boolean } | null>(null);
   const accountId = usePolicyStore((s) => s.accountId);
+  const gatedModalOpen = useModalGateStore(selectGatedModalOpen);
   // Hides the intro once finished even when storage can't remember it, so it can't reopen at once.
   const [finishedIntroKey, setFinishedIntroKey] = useState<string | null>(null);
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
@@ -94,8 +96,10 @@ export default function WorkspaceSwitcher({
       storage: localStorage,
       accountId,
       switcher: state,
-      // Settings has its own picker, and the create → invite chain owns the screen until it ends.
-      blocked: placement !== "sidebar" || !introAllowed || createOpen || invite !== null,
+      // Settings has its own picker, the create → invite chain owns the screen until it ends, and
+      // modals that open on their own (joining a workspace, migration) go first.
+      blocked:
+        placement !== "sidebar" || !introAllowed || createOpen || invite !== null || gatedModalOpen,
     });
 
   if (state.kind === "hidden") return null;
@@ -298,11 +302,12 @@ export default function WorkspaceSwitcher({
       {current && (
         <WorkspaceIntroDialog
           open={showIntro}
+          workspaceId={current.id}
           workspaceName={current.name}
-          onFinish={() => {
+          onFinish={(workspaceId) => {
             if (!accountId) return;
-            markWorkspaceIntroSeen(localStorage, accountId, current.id);
-            setFinishedIntroKey(workspaceIntroKey(accountId, current.id));
+            markWorkspaceIntroSeen(localStorage, accountId, workspaceId);
+            setFinishedIntroKey(workspaceIntroKey(accountId, workspaceId));
           }}
         />
       )}

@@ -92,6 +92,7 @@ import { syncService } from "../services/SyncService.js";
 import logger from "../utils/logger";
 import AcceptInvitationModal from "./AcceptInvitationModal";
 import JoinYourTeamModal from "./JoinYourTeamModal";
+import { useModalGate } from "../stores/modalGateStore";
 import {
   consumePendingInvitationToken,
   clearPendingInvitationToken,
@@ -145,6 +146,12 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
   const [showSearch, setShowSearch] = useState(false);
   const showDiscarded = useShowDiscarded();
   const [activeView, setActiveView] = useState<ControlPanelView>("home");
+  // An accepted invitation routes to Notes, which opens the structure intro there; the gate
+  // holds from the invitation modal through that hand-off (Notes is lazy, so it can mount late).
+  useModalGate(
+    "invitation",
+    invitationToken !== null || (invitationNotesEntry !== null && activeView === "personal-notes")
+  );
   const [integrationsSection, setIntegrationsSection] = useState<IntegrationsSection>(
     DEFAULT_INTEGRATIONS_SECTION
   );

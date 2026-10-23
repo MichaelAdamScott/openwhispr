@@ -36,6 +36,7 @@ async function loadIntro(t) {
     renderToStaticMarkup(
       createElement(mod.WorkspaceIntroDialog, {
         open: true,
+        workspaceId: "acme",
         workspaceName: "Acme Studio",
         onFinish: () => {},
         ...props,
@@ -114,13 +115,13 @@ test("illustrations are decorative and sized for their slot", async (t) => {
   }
 });
 
-test("dismissing the dialog finishes the intro", async (t) => {
+test("dismissing the dialog finishes the intro for its workspace", async (t) => {
   const { renderDialog } = await loadIntro(t);
-  let finished = 0;
+  const finished = [];
 
-  renderDialog({ onFinish: () => finished++ });
+  renderDialog({ onFinish: (workspaceId) => finished.push(workspaceId) });
   globalThis.__onOpenChange(false);
 
-  assert.equal(finished, 1);
+  assert.deepEqual(finished, ["acme"]);
   assert.equal(renderDialog({ open: false }), "");
 });

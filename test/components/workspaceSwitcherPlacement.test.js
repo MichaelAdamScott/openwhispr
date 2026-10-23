@@ -37,8 +37,8 @@ const MOCKS = {
   `,
   // Records whether the switcher asks the intro to show, and for which workspace.
   "/workspace/WorkspaceIntroDialog": `
-    export function WorkspaceIntroDialog({ open, workspaceName, onFinish }) {
-      globalThis.__intro = { open, workspaceName, onFinish };
+    export function WorkspaceIntroDialog({ open, workspaceId, workspaceName, onFinish }) {
+      globalThis.__intro = { open, workspaceId, workspaceName, onFinish };
       return null;
     }
   `,
@@ -167,9 +167,24 @@ test("finishing the intro marks it seen for this account and workspace", async (
   const render = await loadSwitcher(t);
 
   render({ introAllowed: true });
-  globalThis.__intro.onFinish();
+  assert.equal(globalThis.__intro.workspaceId, "acme");
+  globalThis.__intro.onFinish("acme");
 
   assert.equal(localStorage.getItem("workspaceIntroVersion:user-1:acme"), "1");
   render({ introAllowed: true });
   assert.equal(globalThis.__intro.open, false);
+});
+
+test("finishing marks the workspace the intro was shown for, not the active one", async (t) => {
+  const render = await loadSwitcher(t);
+  globalThis.__switcherState.workspaces.push({ id: "beta", name: "Beta", role: "member" });
+
+  render({ introAllowed: true });
+  // The active workspace changed while the intro for Beta was finishing.
+  globalThis.__intro.onFinish("beta");
+
+  assert.equal(localStorage.getItem("workspaceIntroVersion:user-1:beta"), "1");
+  assert.equal(localStorage.getItem("workspaceIntroVersion:user-1:acme"), null);
+  render({ introAllowed: true });
+  assert.equal(globalThis.__intro.open, true, "Acme's intro still shows");
 });
