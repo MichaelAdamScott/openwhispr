@@ -1532,7 +1532,7 @@
     "managedAccount": "管理対象アカウント",
     "groups": {
       "account": "アカウント",
-      "app": "アプリ",
+      "workspace": "ワークスペース",
       "aiModels": "AIモデル",
       "system": "システム"
     },
@@ -1544,6 +1544,18 @@
       "plansBilling": {
         "description": "プラン、使用状況、請求",
         "label": "プランと請求"
+      },
+      "workspaceGeneral": {
+        "label": "一般",
+        "description": "ワークスペースの名前とアイコン"
+      },
+      "workspacePeople": {
+        "label": "ユーザー",
+        "description": "メンバーとチーム"
+      },
+      "workspaceDeveloper": {
+        "label": "開発者",
+        "description": "ワークスペースの API キー"
       },
       "general": {
         "description": "外観、サウンド、起動設定",
@@ -1572,10 +1584,6 @@
       "system": {
         "description": "更新、ストレージ、開発者ツール",
         "label": "システム"
-      },
-      "workspace": {
-        "description": "メンバー、チームスペース、API キー",
-        "label": "ワークスペース"
       }
     },
     "title": "設定"
@@ -2419,6 +2427,10 @@
         "members": "メンバー",
         "teams": "グループ",
         "developer": "開発者"
+      },
+      "people": {
+        "title": "ユーザー",
+        "description": "ワークスペースのユーザーとそのロールを管理します。"
       },
       "role": {
         "owner": "オーナー",

@@ -1511,7 +1511,7 @@
     "managedAccount": "Conta gerenciada",
     "groups": {
       "account": "Conta",
-      "app": "Aplicativo",
+      "workspace": "Espaço de trabalho",
       "aiModels": "Modelos de IA",
       "system": "Sistema"
     },
@@ -1522,7 +1522,19 @@
       },
       "plansBilling": {
         "description": "Planos, uso e cobrança",
-        "label": "Planos e cobrança"
+        "label": "Plano e cobrança"
+      },
+      "workspaceGeneral": {
+        "label": "Geral",
+        "description": "Nome e ícone do espaço de trabalho"
+      },
+      "workspacePeople": {
+        "label": "Pessoas",
+        "description": "Membros e equipes"
+      },
+      "workspaceDeveloper": {
+        "label": "Desenvolvedor",
+        "description": "Chaves de API do espaço de trabalho"
       },
       "general": {
         "description": "Aparência, sons e inicialização",
@@ -1542,7 +1554,7 @@
       },
       "llms": {
         "description": "Modelos para chat, limpeza e resumos",
-        "label": "Modelos de linguagem"
+        "label": "Modelo de linguagem"
       },
       "privacyData": {
         "description": "Privacidade, permissões e análise",
@@ -1551,10 +1563,6 @@
       "system": {
         "description": "Atualizações, armazenamento e ferramentas de desenvolvimento",
         "label": "Sistema"
-      },
-      "workspace": {
-        "description": "Membros, espaços de equipe e chaves de API",
-        "label": "Espaço de trabalho"
       }
     },
     "title": "Configurações"
@@ -2398,6 +2406,10 @@
         "members": "Membros",
         "teams": "Grupos",
         "developer": "Desenvolvedor"
+      },
+      "people": {
+        "title": "Pessoas",
+        "description": "Gerencie as pessoas do seu espaço de trabalho e as funções delas."
       },
       "role": {
         "owner": "Proprietário",

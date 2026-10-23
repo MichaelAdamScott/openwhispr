@@ -207,10 +207,9 @@ test("user-authored names and previews detect direction at their display boundar
     ["src/components/notes/SpaceGroupsSection.tsx", /<span\s+dir="auto"[^>]*>\s*\{teamRef\.name\}/],
     ["src/components/notes/SpaceGroupsSection.tsx", /<span\s+dir="auto"[^>]*>\s*\{team\.name\}/],
     [
-      "src/components/settings/WorkspaceSection.tsx",
+      "src/components/settings/WorkspaceGeneralSection.tsx",
       /<h2\s+dir="auto"[^>]*>\s*\{workspace\.name\}/,
     ],
-    ["src/components/settings/WorkspaceSection.tsx", /<span\s+dir="auto"[^>]*>\s*\{w\.name\}/],
     ["src/components/notes/NoteEditor.tsx", /<span\s+dir="auto"[^>]*>\s*\{space\.name\}/],
     ["src/components/notes/NoteEditor.tsx", /<span\s+dir="auto"[^>]*>\s*\{folderName\}/],
     [

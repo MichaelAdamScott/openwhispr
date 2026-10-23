@@ -1626,7 +1626,7 @@
     "managedAccount": "Compte géré",
     "groups": {
       "account": "Compte",
-      "app": "Application",
+      "workspace": "Espace de travail",
       "aiModels": "Modèles IA",
       "system": "Système"
     },
@@ -1637,11 +1637,19 @@
       },
       "plansBilling": {
         "description": "Forfaits, utilisation & facturation",
-        "label": "Forfaits & facturation"
+        "label": "Forfait & facturation"
       },
-      "workspace": {
-        "description": "Membres, espaces d'équipe et clés API",
-        "label": "Espace de travail"
+      "workspaceGeneral": {
+        "label": "Général",
+        "description": "Nom et icône de l'espace de travail"
+      },
+      "workspacePeople": {
+        "label": "Personnes",
+        "description": "Membres et équipes"
+      },
+      "workspaceDeveloper": {
+        "label": "Développeur",
+        "description": "Clés API de l'espace de travail"
       },
       "general": {
         "description": "Apparence, sons & démarrage",
@@ -1661,7 +1669,7 @@
       },
       "llms": {
         "description": "Modèles pour chat, nettoyage & résumés",
-        "label": "Modèles de langage"
+        "label": "Modèle de langage"
       },
       "privacyData": {
         "description": "Confidentialité, permissions & analytique",
@@ -1694,6 +1702,10 @@
         "members": "Membres",
         "teams": "Groupes",
         "developer": "Développeur"
+      },
+      "people": {
+        "title": "Personnes",
+        "description": "Gérez les personnes de votre espace de travail et leurs rôles."
       },
       "role": {
         "owner": "Propriétaire",

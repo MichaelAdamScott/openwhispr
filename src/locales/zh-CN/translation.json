@@ -1532,7 +1532,7 @@
     "managedAccount": "受管理的账户",
     "groups": {
       "account": "账户",
-      "app": "应用",
+      "workspace": "工作区",
       "aiModels": "AI 模型",
       "system": "系统"
     },
@@ -1544,6 +1544,18 @@
       "plansBilling": {
         "description": "套餐、用量与账单",
         "label": "套餐与账单"
+      },
+      "workspaceGeneral": {
+        "label": "常规",
+        "description": "工作区名称和图标"
+      },
+      "workspacePeople": {
+        "label": "人员",
+        "description": "成员和团队"
+      },
+      "workspaceDeveloper": {
+        "label": "开发者",
+        "description": "工作区 API 密钥"
       },
       "general": {
         "description": "外观、声音与启动",
@@ -1572,10 +1584,6 @@
       "system": {
         "description": "更新、存储与开发者工具",
         "label": "系统"
-      },
-      "workspace": {
-        "description": "成员、团队空间和 API 密钥",
-        "label": "工作区"
       }
     },
     "title": "设置"
@@ -2419,6 +2427,10 @@
         "members": "成员",
         "teams": "群组",
         "developer": "开发者"
+      },
+      "people": {
+        "title": "人员",
+        "description": "管理工作区中的人员及其角色。"
       },
       "role": {
         "owner": "所有者",

@@ -3068,6 +3068,10 @@
         "teams": "المجموعات",
         "developer": "للمطورين"
       },
+      "people": {
+        "title": "الأشخاص",
+        "description": "أدر الأشخاص في مساحة العمل وأدوارهم."
+      },
       "role": {
         "owner": "مالك",
         "admin": "مسؤول",
@@ -4589,7 +4593,7 @@
     "managedAccount": "حساب مُدار",
     "groups": {
       "account": "الحساب",
-      "app": "التطبيق",
+      "workspace": "مساحة العمل",
       "aiModels": "نماذج الذكاء الاصطناعي",
       "system": "النظام"
     },
@@ -4600,11 +4604,19 @@
       },
       "plansBilling": {
         "description": "الخطط والاستخدام والفواتير",
-        "label": "الخطط والفواتير"
+        "label": "الخطة والفواتير"
       },
-      "workspace": {
-        "description": "الأعضاء، مساحات الفريق ومفاتيح API",
-        "label": "مساحة العمل"
+      "workspaceGeneral": {
+        "label": "عام",
+        "description": "اسم مساحة العمل وأيقونتها"
+      },
+      "workspacePeople": {
+        "label": "الأشخاص",
+        "description": "الأعضاء والفرق"
+      },
+      "workspaceDeveloper": {
+        "label": "للمطورين",
+        "description": "مفاتيح API لمساحة العمل"
       },
       "general": {
         "description": "المظهر والأصوات وبدء التشغيل",
@@ -4624,7 +4636,7 @@
       },
       "llms": {
         "description": "نماذج الدردشة والتنظيف والملخصات",
-        "label": "النماذج اللغوية"
+        "label": "النموذج اللغوي"
       },
       "privacyData": {
         "description": "الخصوصية والأذونات والتحليلات",

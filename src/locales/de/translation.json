@@ -1626,7 +1626,7 @@
     "managedAccount": "Verwaltetes Konto",
     "groups": {
       "account": "Konto",
-      "app": "App",
+      "workspace": "Workspace",
       "aiModels": "KI-Modelle",
       "system": "System"
     },
@@ -1637,11 +1637,19 @@
       },
       "plansBilling": {
         "description": "Tarife, Nutzung & Abrechnung",
-        "label": "Tarife & Abrechnung"
+        "label": "Tarif & Abrechnung"
       },
-      "workspace": {
-        "description": "Mitglieder, Team-Bereiche und API-Schlüssel",
-        "label": "Workspace"
+      "workspaceGeneral": {
+        "label": "Allgemein",
+        "description": "Name und Symbol des Workspace"
+      },
+      "workspacePeople": {
+        "label": "Personen",
+        "description": "Mitglieder und Teams"
+      },
+      "workspaceDeveloper": {
+        "label": "Entwickler",
+        "description": "API-Schlüssel des Workspace"
       },
       "general": {
         "description": "Darstellung, Töne & Start",
@@ -1661,7 +1669,7 @@
       },
       "llms": {
         "description": "Modelle für Chat, Bereinigung & Zusammenfassungen",
-        "label": "Sprachmodelle"
+        "label": "Sprachmodell"
       },
       "privacyData": {
         "description": "Datenschutz, Berechtigungen & Analyse",
@@ -1694,6 +1702,10 @@
         "members": "Mitglieder",
         "teams": "Gruppen",
         "developer": "Entwickler"
+      },
+      "people": {
+        "title": "Personen",
+        "description": "Verwalten Sie die Personen in Ihrem Workspace und ihre Rollen."
       },
       "role": {
         "owner": "Inhaber",

@@ -1532,7 +1532,7 @@
     "managedAccount": "受管理的帳戶",
     "groups": {
       "account": "帳戶",
-      "app": "應用程式",
+      "workspace": "工作區",
       "aiModels": "AI 模型",
       "system": "系統"
     },
@@ -1544,6 +1544,18 @@
       "plansBilling": {
         "description": "方案、用量與帳單",
         "label": "方案與帳單"
+      },
+      "workspaceGeneral": {
+        "label": "一般",
+        "description": "工作區名稱與圖示"
+      },
+      "workspacePeople": {
+        "label": "人員",
+        "description": "成員與團隊"
+      },
+      "workspaceDeveloper": {
+        "label": "開發者",
+        "description": "工作區 API 金鑰"
       },
       "general": {
         "description": "外觀、音效與啟動",
@@ -1572,10 +1584,6 @@
       "system": {
         "description": "更新、儲存與開發者工具",
         "label": "系統"
-      },
-      "workspace": {
-        "description": "成員、團隊空間與 API 金鑰",
-        "label": "工作區"
       }
     },
     "title": "設定"
@@ -2419,6 +2427,10 @@
         "members": "成員",
         "teams": "群組",
         "developer": "開發者"
+      },
+      "people": {
+        "title": "人員",
+        "description": "管理工作區中的人員及其角色。"
       },
       "role": {
         "owner": "擁有者",
