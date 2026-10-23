@@ -9,6 +9,7 @@ export interface WorkspaceActionsDependencies {
   store: {
     getActiveWorkspaceId(): string | null;
     setActiveWorkspaceId(id: string | null): void;
+    forgetWorkspace(id: string): void;
     refresh(): Promise<void>;
     refreshMembers(workspaceId: string): Promise<void>;
   };
@@ -38,10 +39,13 @@ export function createWorkspaceActions(deps: WorkspaceActionsDependencies): Work
 
   // After the caller loses a workspace, `syncSpaces` purges the team spaces
   // that `/me/spaces` no longer lists, so the sync request cleans up the local mirror.
+  // The store's refresh keeps its old list when it fails, so the lost workspace is
+  // dropped first; otherwise it could still be picked as the current one.
   async function afterLosingWorkspace(workspaceId: string): Promise<void> {
     if (deps.store.getActiveWorkspaceId() === workspaceId) {
       deps.store.setActiveWorkspaceId(null);
     }
+    deps.store.forgetWorkspace(workspaceId);
     await refreshQuietly("list", () => deps.store.refresh());
     deps.sync.requestSyncAll("manual");
   }

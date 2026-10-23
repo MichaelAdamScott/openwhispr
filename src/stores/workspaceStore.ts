@@ -15,6 +15,8 @@ interface WorkspaceState {
   members: WorkspaceMember[];
 
   setActiveWorkspaceId: (id: string | null) => void;
+  /** Drops a workspace the user just left or deleted, so a failed refresh can't show it again. */
+  forgetWorkspace: (id: string) => void;
   resetForAccountChange: () => void;
   refresh: () => Promise<void>;
   createWorkspace: (name: string) => Promise<Workspace>;
@@ -83,6 +85,27 @@ function readWorkspaceListCache(accountId: string | null): Workspace[] | null {
   }
 }
 
+// Keeps the entry's age: pruning one workspace is not a fresh read of the list.
+function pruneWorkspaceListCache(accountId: string | null, workspaceId: string): void {
+  const cached = readWorkspaceListCache(accountId);
+  if (!cached || !cached.some((w) => w.id === workspaceId)) return;
+  try {
+    const { fetchedAt } = JSON.parse(localStorage.getItem(WORKSPACE_LIST_CACHE_KEY) ?? "{}") as {
+      fetchedAt?: number;
+    };
+    localStorage.setItem(
+      WORKSPACE_LIST_CACHE_KEY,
+      JSON.stringify({
+        accountId,
+        fetchedAt,
+        workspaces: cached.filter((w) => w.id !== workspaceId),
+      })
+    );
+  } catch {
+    // The cache is only a convenience; a stale entry ages out on its own.
+  }
+}
+
 function clearWorkspaceListCache(): void {
   if (typeof window === "undefined") return;
   try {
@@ -141,6 +164,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     membersRequestSeq++;
     set({ activeWorkspaceId: id, members: [] });
     refreshForWorkspace(id);
+  },
+
+  forgetWorkspace: (id) => {
+    set((s) => ({ workspaces: s.workspaces.filter((w) => w.id !== id) }));
+    pruneWorkspaceListCache(usePolicyStore.getState().accountId, id);
   },
 
   resetForAccountChange: () => {

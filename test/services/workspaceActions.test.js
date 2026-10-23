@@ -3,9 +3,11 @@ const assert = require("node:assert/strict");
 
 const load = () => import("../../src/services/workspaceActionsCore.ts");
 
-function makeHarness({ activeId = "ws-1", failures = {} } = {}) {
+function makeHarness({ activeId = "ws-1", failures = {}, refreshFails = false } = {}) {
   const calls = [];
   let active = activeId;
+  // Like useWorkspaceStore: a failed refresh never rejects; it flags `error` and keeps the old list.
+  const list = { workspaces: ["ws-1", "ws-2"], error: false };
   const step = (name, ...args) => {
     calls.push([name, ...args]);
     if (failures[name]) throw failures[name];
@@ -23,12 +25,19 @@ function makeHarness({ activeId = "ws-1", failures = {} } = {}) {
         calls.push(["setActive", id]);
         active = id;
       },
-      refresh: async () => step("refresh"),
+      forgetWorkspace: (id) => {
+        calls.push(["forget", id]);
+        list.workspaces = list.workspaces.filter((workspaceId) => workspaceId !== id);
+      },
+      refresh: async () => {
+        step("refresh");
+        if (refreshFails) list.error = true;
+      },
       refreshMembers: async (workspaceId) => step("refreshMembers", workspaceId),
     },
     sync: { requestSyncAll: (reason) => calls.push(["requestSyncAll", reason]) },
   };
-  return { calls, deps, getActive: () => active };
+  return { calls, deps, list, getActive: () => active };
 }
 
 test("leave calls the API before touching the store", async () => {
@@ -38,6 +47,7 @@ test("leave calls the API before touching the store", async () => {
   assert.deepEqual(calls, [
     ["removeMember", "ws-1", "user-1"],
     ["setActive", null],
+    ["forget", "ws-1"],
     ["refresh"],
     ["requestSyncAll", "manual"],
   ]);
@@ -62,6 +72,22 @@ test("leave succeeds even when the workspace refresh fails", async () => {
   assert.ok(calls.some(([name]) => name === "refresh"));
 });
 
+test("a left workspace is gone from the list even when the refresh fails", async () => {
+  const { createWorkspaceActions } = await load();
+  const { deps, list } = makeHarness({ refreshFails: true });
+  await createWorkspaceActions(deps).leaveWorkspace("ws-1", "user-1");
+  assert.equal(list.error, true);
+  assert.deepEqual(list.workspaces, ["ws-2"]);
+});
+
+test("a deleted workspace is gone from the list even when the refresh fails", async () => {
+  const { createWorkspaceActions } = await load();
+  const { deps, list } = makeHarness({ activeId: "ws-2", refreshFails: true });
+  await createWorkspaceActions(deps).deleteWorkspace("ws-1");
+  assert.equal(list.error, true);
+  assert.deepEqual(list.workspaces, ["ws-2"]);
+});
+
 test("a failed leave changes nothing locally", async () => {
   const { createWorkspaceActions } = await load();
   const failure = new Error("server said no");
@@ -78,6 +104,7 @@ test("delete follows the same order", async () => {
   assert.deepEqual(calls, [
     ["remove", "ws-1"],
     ["setActive", null],
+    ["forget", "ws-1"],
     ["refresh"],
     ["requestSyncAll", "manual"],
   ]);

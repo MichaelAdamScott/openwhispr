@@ -11,6 +11,7 @@ const actions = createWorkspaceActions({
   store: {
     getActiveWorkspaceId: () => useWorkspaceStore.getState().activeWorkspaceId,
     setActiveWorkspaceId: (id) => useWorkspaceStore.getState().setActiveWorkspaceId(id),
+    forgetWorkspace: (id) => useWorkspaceStore.getState().forgetWorkspace(id),
     refresh: () => useWorkspaceStore.getState().refresh(),
     refreshMembers: (workspaceId) => useWorkspaceStore.getState().refreshMembers(workspaceId),
   },

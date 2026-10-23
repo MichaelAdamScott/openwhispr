@@ -149,3 +149,44 @@ for (const [name, raw] of [
     assert.equal(store.getState().error, true);
   });
 }
+
+test("forgetting a workspace drops it from the list and the cache", async (t) => {
+  const two = [...WORKSPACES, { id: "gone", plan: "business", status: "active", capabilities: {} }];
+  const { storage, store } = await loadStore(t, { list: async () => two });
+  await store.getState().refresh();
+  const fetchedAt = JSON.parse(storage.getItem(CACHE_KEY)).fetchedAt;
+
+  store.getState().forgetWorkspace("gone");
+
+  assert.deepEqual(store.getState().workspaces, WORKSPACES);
+  const cached = JSON.parse(storage.getItem(CACHE_KEY));
+  assert.deepEqual(cached.workspaces, WORKSPACES);
+  // Pruning is not a fresh read, so the cache keeps its age.
+  assert.equal(cached.fetchedAt, fetchedAt);
+});
+
+test("a refresh that fails after forgetting never brings the workspace back", async (t) => {
+  const two = [...WORKSPACES, { id: "gone", plan: "business", status: "active", capabilities: {} }];
+  const { store } = await loadStore(t, { list: async () => two });
+  await store.getState().refresh();
+
+  store.getState().forgetWorkspace("gone");
+  globalThis.__workspaceCacheTest.list = failing;
+  await store.getState().refresh();
+  assert.deepEqual(store.getState().workspaces, WORKSPACES);
+  assert.equal(store.getState().error, true);
+
+  // With nothing in memory, the fallback reads the pruned cache.
+  store.setState({ workspaces: [] });
+  await store.getState().refresh();
+  assert.deepEqual(store.getState().workspaces, WORKSPACES);
+});
+
+test("forgetting leaves another account's cache alone", async (t) => {
+  const other = cacheEntry("acct-2", [{ id: "gone", plan: "business" }]);
+  const { storage, store } = await loadStore(t, { initialStorage: { [CACHE_KEY]: other } });
+
+  store.getState().forgetWorkspace("gone");
+
+  assert.equal(storage.getItem(CACHE_KEY), other);
+});
