@@ -2477,8 +2477,7 @@
       "tab": {
         "general": "General",
         "members": "Miembros",
-        "teams": "Grupos",
-        "developer": "Desarrollador"
+        "teams": "Grupos"
       },
       "people": {
         "title": "Personas",
@@ -2490,24 +2489,24 @@
         "member": "Miembro"
       },
       "general": {
+        "title": "General",
+        "subtitleManage": "Gestiona el nombre, los iconos y más de tu espacio de trabajo",
+        "subtitleView": "El nombre y el icono de tu espacio de trabajo.",
         "nameLabel": "Nombre del espacio de trabajo",
+        "nameHint": "El nombre del espacio de trabajo puede tener hasta 65 caracteres",
+        "iconLabel": "Icono del espacio de trabajo",
+        "iconHint": "Este icono aparece en tu barra lateral y en las notificaciones.",
         "saved": "Espacio de trabajo actualizado",
+        "ownerTitle": "Propietario del espacio de trabajo",
+        "ownerDescription": "Transfiere la propiedad a otro miembro del espacio de trabajo.",
         "dangerTitle": "Eliminar espacio de trabajo",
-        "dangerDescription": "Todas las notas, carpetas e integraciones compartidas se eliminarán. Esto no se puede deshacer.",
+        "dangerDescription": "Elimina de forma permanente este espacio de trabajo, incluidas todas sus notas y archivos.",
         "delete": "Eliminar espacio de trabajo",
-        "confirmTitle": "¿Eliminar {{name}}?",
-        "confirmDescription": "Esto cancela la suscripción y elimina todos los datos del espacio de trabajo permanentemente.",
         "deleting": "Eliminando…",
-        "deleted": "Espacio de trabajo eliminado",
         "leaveTitle": "Salir del espacio de trabajo",
-        "leaveDescription": "Perderás el acceso a este espacio de trabajo y a sus notas compartidas.",
+        "leaveDescription": "Sal de este espacio de trabajo. Perderás el acceso a sus espacios de equipo.",
         "leave": "Salir del espacio de trabajo",
-        "leaving": "Saliendo…",
-        "leaveConfirm": {
-          "title": "¿Salir de {{name}}?",
-          "description": "Perderás el acceso de inmediato. Un administrador puede invitarte de nuevo."
-        },
-        "left": "Saliste de {{name}}"
+        "leaving": "Saliendo…"
       },
       "members": {
         "title": "Miembros",
@@ -2524,10 +2523,6 @@
         "removeConfirm": {
           "title": "¿Quitar a este miembro?",
           "description": "{{name}} perderá el acceso a {{workspace}} de inmediato."
-        },
-        "transferConfirm": {
-          "title": "¿Transferir la propiedad?",
-          "description": "{{name}} pasa a ser el propietario de {{workspace}}. Tu rol cambia a administrador y solo el nuevo propietario puede transferirla de vuelta."
         }
       },
       "joinRequests": {
@@ -4774,7 +4769,6 @@
   "workspaces": {
     "switcher": {
       "workspaces": "Espacios de trabajo",
-      "create": "Crear espacio de trabajo…",
       "add": "Añadir espacio de trabajo",
       "invitePeople": "Invitar personas"
     },

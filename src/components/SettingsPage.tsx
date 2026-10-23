@@ -3004,7 +3004,12 @@ export default function SettingsPage({
         );
 
       case "workspaceGeneral":
-        return <WorkspaceGeneralSection onChooseWorkspace={onChooseWorkspace} />;
+        return (
+          <WorkspaceGeneralSection
+            onNavigateToSection={onNavigateToSection}
+            onChooseWorkspace={onChooseWorkspace}
+          />
+        );
 
       case "workspacePeople":
         return <WorkspacePeopleSection initialSubTab={initialSubTab} />;

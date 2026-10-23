@@ -2425,8 +2425,7 @@
       "tab": {
         "general": "一般",
         "members": "メンバー",
-        "teams": "グループ",
-        "developer": "開発者"
+        "teams": "グループ"
       },
       "people": {
         "title": "ユーザー",
@@ -2438,24 +2437,24 @@
         "member": "メンバー"
       },
       "general": {
+        "title": "一般",
+        "subtitleManage": "ワークスペースの名前、アイコンなどを管理します",
+        "subtitleView": "ワークスペースの名前とアイコンです。",
         "nameLabel": "ワークスペース名",
+        "nameHint": "ワークスペース名は最大 65 文字まで入力できます",
+        "iconLabel": "ワークスペースアイコン",
+        "iconHint": "このアイコンはサイドバーと通知に表示されます。",
         "saved": "ワークスペースを更新しました",
+        "ownerTitle": "ワークスペースのオーナー",
+        "ownerDescription": "オーナー権限を別のワークスペースメンバーに譲渡します。",
         "dangerTitle": "ワークスペースを削除",
-        "dangerDescription": "共有されているノート、フォルダ、連携がすべて削除されます。この操作は取り消せません。",
+        "dangerDescription": "このワークスペースを、すべてのノートとファイルを含めて完全に削除します。",
         "delete": "ワークスペースを削除",
-        "confirmTitle": "{{name}} を削除しますか？",
-        "confirmDescription": "サブスクリプションがキャンセルされ、ワークスペースのすべてのデータが完全に削除されます。",
         "deleting": "削除中…",
-        "deleted": "ワークスペースを削除しました",
         "leaveTitle": "ワークスペースから退出",
-        "leaveDescription": "このワークスペースと共有ノートにアクセスできなくなります。",
+        "leaveDescription": "このワークスペースから退出します。チームスペースにアクセスできなくなります。",
         "leave": "ワークスペースから退出",
-        "leaving": "退出中…",
-        "leaveConfirm": {
-          "title": "{{name}} から退出しますか？",
-          "description": "すぐにアクセスできなくなります。管理者が再度招待できます。"
-        },
-        "left": "{{name}} から退出しました"
+        "leaving": "退出中…"
       },
       "members": {
         "title": "メンバー",
@@ -2472,10 +2471,6 @@
         "removeConfirm": {
           "title": "このメンバーを削除しますか？",
           "description": "{{name}} はすぐに {{workspace}} にアクセスできなくなります。"
-        },
-        "transferConfirm": {
-          "title": "オーナー権限を譲渡しますか？",
-          "description": "{{name}} が {{workspace}} のオーナーになります。あなたの役割は管理者に変わり、元に戻せるのは新しいオーナーのみです。"
         }
       },
       "joinRequests": {
@@ -4774,7 +4769,6 @@
   "workspaces": {
     "switcher": {
       "workspaces": "ワークスペース",
-      "create": "ワークスペースを作成…",
       "add": "ワークスペースを追加",
       "invitePeople": "メンバーを招待"
     },

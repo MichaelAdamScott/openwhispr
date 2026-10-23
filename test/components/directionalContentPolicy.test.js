@@ -206,9 +206,10 @@ test("user-authored names and previews detect direction at their display boundar
     ["src/components/notes/CreateSpaceDialog.tsx", /<span\s+dir="auto"[^>]*>\s*\{team\.name\}/],
     ["src/components/notes/SpaceGroupsSection.tsx", /<span\s+dir="auto"[^>]*>\s*\{teamRef\.name\}/],
     ["src/components/notes/SpaceGroupsSection.tsx", /<span\s+dir="auto"[^>]*>\s*\{team\.name\}/],
+    // The page shows the name only in its input.
     [
       "src/components/settings/WorkspaceGeneralSection.tsx",
-      /<h2\s+dir="auto"[^>]*>\s*\{workspace\.name\}/,
+      /<Input\s+id=\{nameId\}\s+dir="auto"\s+value=\{name\}/,
     ],
     ["src/components/notes/NoteEditor.tsx", /<span\s+dir="auto"[^>]*>\s*\{space\.name\}/],
     ["src/components/notes/NoteEditor.tsx", /<span\s+dir="auto"[^>]*>\s*\{folderName\}/],

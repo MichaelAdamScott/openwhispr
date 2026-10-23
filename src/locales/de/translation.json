@@ -1700,8 +1700,7 @@
       "tab": {
         "general": "Allgemein",
         "members": "Mitglieder",
-        "teams": "Gruppen",
-        "developer": "Entwickler"
+        "teams": "Gruppen"
       },
       "people": {
         "title": "Personen",
@@ -1713,24 +1712,24 @@
         "member": "Mitglied"
       },
       "general": {
+        "title": "Allgemein",
+        "subtitleManage": "Verwalten Sie Name, Icons und mehr für Ihren Workspace",
+        "subtitleView": "Name und Icon Ihres Workspace.",
         "nameLabel": "Workspace-Name",
+        "nameHint": "Der Workspace-Name darf bis zu 65 Zeichen lang sein",
+        "iconLabel": "Workspace-Icon",
+        "iconHint": "Dieses Icon erscheint in Ihrer Seitenleiste und in Benachrichtigungen.",
         "saved": "Workspace aktualisiert",
+        "ownerTitle": "Workspace-Inhaber",
+        "ownerDescription": "Übertragen Sie die Inhaberschaft an ein anderes Workspace-Mitglied.",
         "dangerTitle": "Workspace löschen",
-        "dangerDescription": "Alle geteilten Notizen, Ordner und Integrationen werden gelöscht. Dies kann nicht rückgängig gemacht werden.",
+        "dangerDescription": "Diesen Workspace dauerhaft löschen, einschließlich aller Notizen und Dateien.",
         "delete": "Workspace löschen",
-        "confirmTitle": "{{name}} löschen?",
-        "confirmDescription": "Dies kündigt das Abonnement und entfernt alle Workspace-Daten dauerhaft.",
         "deleting": "Lösche…",
-        "deleted": "Workspace gelöscht",
         "leaveTitle": "Workspace verlassen",
-        "leaveDescription": "Sie verlieren den Zugriff auf diesen Workspace und seine geteilten Notizen.",
+        "leaveDescription": "Entfernen Sie sich aus diesem Workspace. Sie verlieren den Zugriff auf seine Teamspaces.",
         "leave": "Workspace verlassen",
-        "leaving": "Verlasse…",
-        "leaveConfirm": {
-          "title": "{{name}} verlassen?",
-          "description": "Sie verlieren sofort den Zugriff. Ein Administrator kann Sie erneut einladen."
-        },
-        "left": "Sie haben {{name}} verlassen"
+        "leaving": "Verlasse…"
       },
       "members": {
         "title": "Mitglieder",
@@ -1747,10 +1746,6 @@
         "removeConfirm": {
           "title": "Dieses Mitglied entfernen?",
           "description": "{{name}} verliert sofort den Zugriff auf {{workspace}}."
-        },
-        "transferConfirm": {
-          "title": "Eigentum übertragen?",
-          "description": "{{name}} wird Inhaber von {{workspace}}. Ihre Rolle ändert sich zu Administrator und nur der neue Inhaber kann das Eigentum zurückübertragen."
         }
       },
       "joinRequests": {
@@ -3036,7 +3031,6 @@
   "workspaces": {
     "switcher": {
       "workspaces": "Workspaces",
-      "create": "Workspace erstellen…",
       "add": "Workspace hinzufügen",
       "invitePeople": "Personen einladen"
     },

@@ -1700,8 +1700,7 @@
       "tab": {
         "general": "Général",
         "members": "Membres",
-        "teams": "Groupes",
-        "developer": "Développeur"
+        "teams": "Groupes"
       },
       "people": {
         "title": "Personnes",
@@ -1713,24 +1712,24 @@
         "member": "Membre"
       },
       "general": {
+        "title": "Général",
+        "subtitleManage": "Gérez le nom, les icônes et plus encore de votre espace",
+        "subtitleView": "Le nom et l'icône de votre espace.",
         "nameLabel": "Nom",
+        "nameHint": "Le nom de l'espace peut contenir jusqu'à 65 caractères",
+        "iconLabel": "Icône de l'espace",
+        "iconHint": "Cette icône apparaît dans votre barre latérale et vos notifications.",
         "saved": "Espace mis à jour",
+        "ownerTitle": "Propriétaire de l'espace",
+        "ownerDescription": "Transférez la propriété à un autre membre de l'espace.",
         "dangerTitle": "Supprimer l'espace",
-        "dangerDescription": "Toutes les notes, dossiers et intégrations partagés seront supprimés. Cette action est irréversible.",
+        "dangerDescription": "Supprimez définitivement cet espace, y compris toutes ses notes et tous ses fichiers.",
         "delete": "Supprimer l'espace",
-        "confirmTitle": "Supprimer {{name}} ?",
-        "confirmDescription": "Cela annule l'abonnement et supprime définitivement toutes les données.",
         "deleting": "Suppression…",
-        "deleted": "Espace supprimé",
         "leaveTitle": "Quitter l'espace",
-        "leaveDescription": "Vous perdrez l'accès à cet espace et à ses notes partagées.",
+        "leaveDescription": "Retirez-vous de cet espace. Vous perdrez l'accès à ses espaces d'équipe.",
         "leave": "Quitter l'espace",
-        "leaving": "Départ…",
-        "leaveConfirm": {
-          "title": "Quitter {{name}} ?",
-          "description": "Vous perdrez l'accès immédiatement. Un administrateur pourra vous réinviter."
-        },
-        "left": "Vous avez quitté {{name}}"
+        "leaving": "Départ…"
       },
       "members": {
         "title": "Membres",
@@ -1747,10 +1746,6 @@
         "removeConfirm": {
           "title": "Retirer ce membre ?",
           "description": "{{name}} perdra immédiatement l'accès à {{workspace}}."
-        },
-        "transferConfirm": {
-          "title": "Transférer la propriété ?",
-          "description": "{{name}} devient propriétaire de {{workspace}}. Votre rôle passe à administrateur et seul le nouveau propriétaire pourra la retransférer."
         }
       },
       "joinRequests": {
@@ -3036,7 +3031,6 @@
   "workspaces": {
     "switcher": {
       "workspaces": "Espaces de travail",
-      "create": "Créer un espace de travail…",
       "add": "Ajouter un espace de travail",
       "invitePeople": "Inviter des personnes"
     },

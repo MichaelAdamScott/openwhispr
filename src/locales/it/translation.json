@@ -2425,8 +2425,7 @@
       "tab": {
         "general": "Generale",
         "members": "Membri",
-        "teams": "Gruppi",
-        "developer": "Sviluppatore"
+        "teams": "Gruppi"
       },
       "people": {
         "title": "Persone",
@@ -2438,24 +2437,24 @@
         "member": "Membro"
       },
       "general": {
+        "title": "Generale",
+        "subtitleManage": "Gestisci il nome, le icone e altro della tua area di lavoro",
+        "subtitleView": "Il nome e l'icona della tua area di lavoro.",
         "nameLabel": "Nome dell'area di lavoro",
+        "nameHint": "Il nome dell'area di lavoro può contenere fino a 65 caratteri",
+        "iconLabel": "Icona dell'area di lavoro",
+        "iconHint": "Questa icona appare nella barra laterale e nelle notifiche.",
         "saved": "Area di lavoro aggiornata",
+        "ownerTitle": "Proprietario dell'area di lavoro",
+        "ownerDescription": "Trasferisci la proprietà a un altro membro dell'area di lavoro.",
         "dangerTitle": "Elimina area di lavoro",
-        "dangerDescription": "Tutte le note, le cartelle e le integrazioni condivise verranno eliminate. Questa operazione non può essere annullata.",
+        "dangerDescription": "Elimina definitivamente questa area di lavoro, incluse tutte le note e i file.",
         "delete": "Elimina area di lavoro",
-        "confirmTitle": "Eliminare {{name}}?",
-        "confirmDescription": "Questa operazione annulla l'abbonamento e rimuove definitivamente tutti i dati dell'area di lavoro.",
         "deleting": "Eliminazione…",
-        "deleted": "Area di lavoro eliminata",
         "leaveTitle": "Abbandona area di lavoro",
-        "leaveDescription": "Perderai l'accesso a questa area di lavoro e alle sue note condivise.",
+        "leaveDescription": "Esci da questa area di lavoro. Perderai l'accesso ai suoi spazi team.",
         "leave": "Abbandona area di lavoro",
-        "leaving": "Uscita…",
-        "leaveConfirm": {
-          "title": "Abbandonare {{name}}?",
-          "description": "Perderai subito l'accesso. Un amministratore potrà invitarti di nuovo."
-        },
-        "left": "Hai abbandonato {{name}}"
+        "leaving": "Uscita…"
       },
       "members": {
         "title": "Membri",
@@ -2472,10 +2471,6 @@
         "removeConfirm": {
           "title": "Rimuovere questo membro?",
           "description": "{{name}} perderà immediatamente l'accesso a {{workspace}}."
-        },
-        "transferConfirm": {
-          "title": "Trasferire la proprietà?",
-          "description": "{{name}} diventa il proprietario di {{workspace}}. Il tuo ruolo passa ad amministratore e solo il nuovo proprietario potrà ritrasferirla."
         }
       },
       "joinRequests": {
@@ -4774,7 +4769,6 @@
   "workspaces": {
     "switcher": {
       "workspaces": "Aree di lavoro",
-      "create": "Crea area di lavoro…",
       "add": "Aggiungi area di lavoro",
       "invitePeople": "Invita persone"
     },

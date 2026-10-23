@@ -1700,8 +1700,7 @@
       "tab": {
         "general": "General",
         "members": "Members",
-        "teams": "Groups",
-        "developer": "Developer"
+        "teams": "Groups"
       },
       "people": {
         "title": "People",
@@ -1713,24 +1712,24 @@
         "member": "Member"
       },
       "general": {
+        "title": "General",
+        "subtitleManage": "Manage your workspace name, icons and more",
+        "subtitleView": "Your workspace name and icon.",
         "nameLabel": "Workspace name",
+        "nameHint": "Your workspace name can be up to 65 characters",
+        "iconLabel": "Workspace icon",
+        "iconHint": "This icon appears in your sidebar and notifications.",
         "saved": "Workspace updated",
+        "ownerTitle": "Workspace Owner",
+        "ownerDescription": "Transfer ownership to another workspace member.",
         "dangerTitle": "Delete workspace",
-        "dangerDescription": "All shared notes, folders, and integrations will be deleted. This cannot be undone.",
+        "dangerDescription": "Permanently delete this workspace, including all notes and files.",
         "delete": "Delete workspace",
-        "confirmTitle": "Delete {{name}}?",
-        "confirmDescription": "This cancels the subscription and removes all workspace data permanently.",
         "deleting": "Deleting…",
-        "deleted": "Workspace deleted",
         "leaveTitle": "Leave workspace",
-        "leaveDescription": "You'll lose access to this workspace and its shared notes.",
+        "leaveDescription": "Remove yourself from this workspace. You'll lose access to its teamspaces.",
         "leave": "Leave workspace",
-        "leaving": "Leaving…",
-        "leaveConfirm": {
-          "title": "Leave {{name}}?",
-          "description": "You'll lose access immediately. An admin can invite you back."
-        },
-        "left": "You left {{name}}"
+        "leaving": "Leaving…"
       },
       "members": {
         "title": "Members",
@@ -1747,10 +1746,6 @@
         "removeConfirm": {
           "title": "Remove this member?",
           "description": "{{name}} will lose access to {{workspace}} immediately."
-        },
-        "transferConfirm": {
-          "title": "Transfer ownership?",
-          "description": "{{name}} becomes the owner of {{workspace}}. Your role changes to admin and only the new owner can transfer it back."
         }
       },
       "joinRequests": {
@@ -3036,7 +3031,6 @@
   "workspaces": {
     "switcher": {
       "workspaces": "Workspaces",
-      "create": "Create workspace…",
       "add": "Add workspace",
       "invitePeople": "Invite people"
     },

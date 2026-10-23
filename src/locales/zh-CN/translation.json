@@ -2425,8 +2425,7 @@
       "tab": {
         "general": "常规",
         "members": "成员",
-        "teams": "群组",
-        "developer": "开发者"
+        "teams": "群组"
       },
       "people": {
         "title": "人员",
@@ -2438,24 +2437,24 @@
         "member": "成员"
       },
       "general": {
+        "title": "常规",
+        "subtitleManage": "管理工作区名称、图标等",
+        "subtitleView": "你的工作区名称和图标。",
         "nameLabel": "工作区名称",
+        "nameHint": "工作区名称最多可包含 65 个字符",
+        "iconLabel": "工作区图标",
+        "iconHint": "此图标会显示在你的侧边栏和通知中。",
         "saved": "工作区已更新",
+        "ownerTitle": "工作区所有者",
+        "ownerDescription": "将所有权转让给另一位工作区成员。",
         "dangerTitle": "删除工作区",
-        "dangerDescription": "所有共享笔记、文件夹和集成都将被删除。此操作无法撤销。",
+        "dangerDescription": "永久删除此工作区，包括所有笔记和文件。",
         "delete": "删除工作区",
-        "confirmTitle": "删除 {{name}}？",
-        "confirmDescription": "这将取消订阅并永久删除工作区的所有数据。",
         "deleting": "删除中…",
-        "deleted": "工作区已删除",
         "leaveTitle": "退出工作区",
-        "leaveDescription": "你将失去对此工作区及其共享笔记的访问权限。",
+        "leaveDescription": "将自己从此工作区中移除。你将失去对其团队空间的访问权限。",
         "leave": "退出工作区",
-        "leaving": "退出中…",
-        "leaveConfirm": {
-          "title": "退出 {{name}}？",
-          "description": "你将立即失去访问权限。管理员可以重新邀请你。"
-        },
-        "left": "你已退出 {{name}}"
+        "leaving": "退出中…"
       },
       "members": {
         "title": "成员",
@@ -2472,10 +2471,6 @@
         "removeConfirm": {
           "title": "移除此成员？",
           "description": "{{name}} 将立即失去对 {{workspace}} 的访问权限。"
-        },
-        "transferConfirm": {
-          "title": "转让所有权？",
-          "description": "{{name}} 将成为 {{workspace}} 的所有者。你的角色将变为管理员，只有新所有者才能转回所有权。"
         }
       },
       "joinRequests": {
@@ -4774,7 +4769,6 @@
   "workspaces": {
     "switcher": {
       "workspaces": "工作区",
-      "create": "创建工作区…",
       "add": "添加工作区",
       "invitePeople": "邀请成员"
     },
