@@ -1,6 +1,6 @@
 import { useAndroidCopy } from '@/hooks/useAndroidCopy';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Platform, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { FormSheet } from '@/components/ui/FormSheet';
 import { iosColor } from '@/config/colors';
@@ -40,6 +40,7 @@ export function AddSnippetSheet({
   const [trigger, setTrigger] = useState('');
   const [replacement, setReplacement] = useState('');
   const triggerRef = useRef<TextInput>(null);
+  const replacementRef = useRef<TextInput>(null);
   const isEditing = !!initial;
 
   useEffect(() => {
@@ -148,6 +149,10 @@ export function AddSnippetSheet({
           placeholderTextColor={PLACEHOLDER_COLOR}
           maxLength={TRIGGER_MAX_LENGTH}
           returnKeyType="next"
+          submitBehavior={Platform.OS === 'android' ? 'submit' : undefined}
+          onSubmitEditing={
+            Platform.OS === 'android' ? () => replacementRef.current?.focus() : undefined
+          }
           autoCorrect={false}
           autoCapitalize="none"
           style={styles.input}
@@ -162,6 +167,7 @@ export function AddSnippetSheet({
         className="rounded-xl bg-tertiarySystemFill px-3.5 py-3"
       >
         <TextInput
+          ref={replacementRef}
           value={replacement}
           onChangeText={setReplacement}
           placeholder={copy('library.replacementExample', 'e.g. Best regards, Alex')}
