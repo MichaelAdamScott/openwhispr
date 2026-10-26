@@ -209,8 +209,9 @@ function BrandDiscMark({ icon, mdIcon }: { icon: string; mdIcon: LucideIconName 
     return <SystemIcon name={icon} mdName={mdIcon} size={24} color="#FFF" />;
   }
 
+  // Android hover must reach the labelled button through the decorative mark.
   return (
-    <View pointerEvents="none" style={styles.plusMark}>
+    <View pointerEvents={Platform.OS === 'android' ? 'auto' : 'none'} style={styles.plusMark}>
       <View style={[styles.plusStroke, styles.plusHorizontal]} />
       <View style={[styles.plusStroke, styles.plusVertical]} />
     </View>

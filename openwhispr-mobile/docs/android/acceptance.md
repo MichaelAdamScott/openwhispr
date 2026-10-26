@@ -1,5 +1,19 @@
 # Android development acceptance — 15 October 2026
 
+## 26 October — circular Add button TalkBack regression
+
+On Play code28, exploring the center of the Dictionary or Snippets Add button with TalkBack leaves focus on the previous control. Ordinary touch still opens the sheet. An isolated native preview reproduced this with the real `Fab`; touching outside the plus mark but inside the button focused it. Removing `pointerEvents="none"` from the decorative plus mark allowed center exploration, and restoring it reproduced the failure. The source repair uses `auto` on Android and preserves `none` on iOS. Android's separate native menu button is unchanged.
+
+The repaired source component passes center focus at 100% and 200% font size in Expo Go on the Android 16 emulator. TalkBack double-tap activation, swipe navigation and ordinary touch were also observed; the first 100% double-tap attempt did not activate, while a repeat did. This is component-preview evidence. Code28 still contains the original behavior, and the final installed candidate and physical phones need the following regression:
+
+1. With TalkBack enabled, open Dictionary, focus a word, then touch the exact center of Add. The whole button must receive focus and expose the localized Add words label.
+2. Double-tap to open the sheet, then close it without saving. Repeat on Snippets using its Add snippet button, including an area with no list row behind the button.
+3. Check the center and edges, then reach the button by swiping from the previous control. The decorative plus must not create an extra focus stop.
+4. Repeat with English and Arabic at 100% and 200% text size. Turn TalkBack off and check that an ordinary center tap still opens each sheet once.
+5. Restore the original language, font and accessibility services; verify that existing words and snippets remain intact.
+
+Use real touchscreen exploration for this check. A Jest `fireEvent.press` or a UIAutomator node click bypasses the native hover path and cannot establish that this regression is fixed.
+
 ## 21 October — current Play baseline and subsequent source repair
 
 Play-installed code19 (`8f32830b30c3de171135394d67fd36252ee58bd6`) passes the original fresh-sign-in and synthetic Moonshine final-word regressions. Two Free-account identities and their local activity counters stay separate across sign-out/sign-in; expired-purchase Restore preserves Free access and the existing billing rows. Earlier code17 zero-charge purchase/active Restore/cancellation/expiry evidence remains build-specific. Paid-account switching, pending/declined recovery, active-Pro process death and provider webhooks are not closed by these passes.
