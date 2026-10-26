@@ -237,10 +237,11 @@ export interface NotesRepository {
   moveNoteToSpace(noteId: number, spaceId: number): void;
   searchNotes(query: string, folderId?: number): Note[];
   /**
-   * Notes for answering a chat question: any term matches title, content, AI summary or
-   * transcript, the notes matching the most terms first. With a window, every note created in it
-   * counts whether or not a term matches: the matches first, then the newest. With no terms, the
-   * most recent notes. Capped at `limit`; `total` counts them all before the cap.
+   * Notes for answering a chat question: a term matches title, content, AI summary or transcript,
+   * and a term held by fewer of the notes searched weighs more. Only notes scoring at least half
+   * as well as the best one count, the best first, then the newest. With a window, only notes
+   * created in it are searched. With no terms, the most recent notes. Capped at `limit`; `total`
+   * counts them all before the cap.
    */
   getChatCandidateNotes(terms: string[], options: ChatCandidateOptions): ChatCandidateNotes;
   getActions(): Action[];

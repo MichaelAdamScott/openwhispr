@@ -104,7 +104,7 @@ describe('useChatStore', () => {
     expect(mockRepo.listConversations()).toEqual([]);
   });
 
-  it('refuses a send to a deleted chat, or while busy, without blaming a wipe', () => {
+  it('refuses a send to a deleted chat, or while busy, without saying it failed', () => {
     mockRun.mockReturnValueOnce(deferred<ChatTurnResult>().promise);
 
     expect(
@@ -114,7 +114,22 @@ describe('useChatStore', () => {
     expect(
       useChatStore.getState().send('second', { conversationId: null, ...sendOptions }),
     ).toBeNull();
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(false);
+    expect(useChatStore.getState().sendBlocked).toBe(false);
+  });
+
+  it('refuses a question it cannot save, says so, and leaves no empty chat', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(mockRepo, 'appendMessage').mockImplementationOnce(() => {
+      throw new Error('database or disk is full');
+    });
+
+    expect(
+      useChatStore.getState().send('Pricing?', { conversationId: null, ...sendOptions }),
+    ).toBeNull();
+    expect(useChatStore.getState().sendBlocked).toBe(true);
+    expect(mockRepo.listConversations()).toEqual([]);
+    expect(mockRun).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('refuses a second send while one is pending', () => {
@@ -685,44 +700,44 @@ describe('a failed chat wipe', () => {
     seedPreviousAccount();
     failClearAll(3);
     expect(clearChatHistory()).toBe(false);
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(false);
+    expect(useChatStore.getState().sendBlocked).toBe(false);
 
     expect(
       useChatStore.getState().send('new question', { conversationId: null, ...sendOptions }),
     ).toBeNull();
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(true);
+    expect(useChatStore.getState().sendBlocked).toBe(true);
 
     // The third failed attempt; the next read finishes the wipe.
     useChatStore.getState().loadConversations();
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(true);
+    expect(useChatStore.getState().sendBlocked).toBe(true);
     useChatStore.getState().loadConversations();
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(false);
+    expect(useChatStore.getState().sendBlocked).toBe(false);
   });
 
   it('clears the refusal when a send gets through', () => {
     failClearAll(2);
     expect(clearChatHistory()).toBe(false);
     useChatStore.getState().send('first', { conversationId: null, ...sendOptions });
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(true);
+    expect(useChatStore.getState().sendBlocked).toBe(true);
     mockRun.mockReturnValueOnce(deferred<ChatTurnResult>().promise);
 
     expect(
       useChatStore.getState().send('again', { conversationId: null, ...sendOptions }),
     ).not.toBeNull();
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(false);
+    expect(useChatStore.getState().sendBlocked).toBe(false);
   });
 
   it('clears the refusal when a send is refused for another reason', () => {
     failClearAll(2);
     expect(clearChatHistory()).toBe(false);
     useChatStore.getState().send('first', { conversationId: null, ...sendOptions });
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(true);
+    expect(useChatStore.getState().sendBlocked).toBe(true);
 
     expect(useChatStore.getState().beginTranscribing(null)).toBe(true);
     expect(
       useChatStore.getState().send('again', { conversationId: null, ...sendOptions }),
     ).toBeNull();
-    expect(useChatStore.getState().sendBlockedByWipe).toBe(false);
+    expect(useChatStore.getState().sendBlocked).toBe(false);
   });
 
   it('finishes the wipe on the next launch before any chat is read', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { AccessibilityInfo, Pressable, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Text } from '@/components/ui/Text';
@@ -7,20 +7,23 @@ import { MarkdownRenderer } from '@/components/notes/MarkdownRenderer';
 import { CHAT_COLORS } from '@/config/colors';
 import { safeHaptics } from '@/lib/utils';
 import type { ChatMessage } from '@/lib/chat/types';
-import { useNotesStore } from '@/store/useNotesStore';
 import { ChatSteps } from './ChatSteps';
 
 interface ChatAssistantMessageProps {
   message: ChatMessage;
   onOpenNote: (noteId: number) => void;
+  /** Source notes deleted since the answer was saved, which would open on nothing. */
+  missingNoteIds: ReadonlySet<number>;
 }
 
 // As long as the referral link's copy confirmation stays.
 const COPIED_MS = 2_000;
 
-export function ChatAssistantMessage({
+// Memoised, so typing a follow-up or a ticking voice timer doesn't redraw every answer's Markdown.
+export const ChatAssistantMessage = memo(function ChatAssistantMessage({
   message,
   onOpenNote,
+  missingNoteIds,
 }: ChatAssistantMessageProps): React.JSX.Element {
   // Counts the copies while "Copied" shows, so each one restarts its timer.
   const [copies, setCopies] = useState(0);
@@ -39,21 +42,6 @@ export function ChatAssistantMessage({
     [message.sources],
   );
 
-  // Every note write reloads the notes list, so it's the signal to check the sources again: a
-  // note deleted since the answer was saved would open on nothing.
-  const notesRevision = useNotesStore((s) => s.notes);
-  const getNoteById = useNotesStore((s) => s.getNoteById);
-  const missingNoteIds = useMemo(
-    () =>
-      new Set(
-        sources
-          .filter((source) => getNoteById(source.noteId) === null)
-          .map((source) => source.noteId),
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sources, getNoteById, notesRevision],
-  );
-
   const copy = async (): Promise<void> => {
     safeHaptics('light');
     try {
@@ -70,7 +58,12 @@ export function ChatAssistantMessage({
     <View className="gap-1 self-stretch">
       {/* A message saved without steps never searched, so claiming it did would mislead. */}
       {message.steps.length > 0 ? (
-        <ChatSteps steps={message.steps} variant="done" sourceCount={sources.length} />
+        <ChatSteps
+          steps={message.steps}
+          variant="done"
+          sourceCount={sources.length}
+          readCount={message.sourcesUnreadable ? null : message.sources.length}
+        />
       ) : null}
       <MarkdownRenderer content={message.text} selectable />
       {sources.length > 0 ? (
@@ -116,7 +109,7 @@ export function ChatAssistantMessage({
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   chip: { borderWidth: StyleSheet.hairlineWidth, borderColor: CHAT_COLORS.hairline },

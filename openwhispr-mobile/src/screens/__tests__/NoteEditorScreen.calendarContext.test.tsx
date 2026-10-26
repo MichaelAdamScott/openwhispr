@@ -888,6 +888,16 @@ describe('NoteEditorScreen note chat errors', () => {
     toChatErrorMessage.mockRestore();
   });
 
+  it('says an empty answer came back rather than showing a blank bubble', async () => {
+    const { CHAT_EMPTY_ANSWER_MESSAGE } = jest.requireActual('@/lib/chat/chatErrorMessage');
+    (ReasoningService.chatOverNote as jest.Mock).mockResolvedValueOnce({ text: ' ', model: 'x' });
+    const { getByTestId, findByTestId } = render(<NoteEditorScreen />);
+    await act(async () => {
+      fireEvent.press(getByTestId('chat-suggestion-List action items'));
+    });
+    expect((await findByTestId('chat-error')).props.children).toBe(CHAT_EMPTY_ANSWER_MESSAGE);
+  });
+
   it('shows another failure’s own text', async () => {
     (ReasoningService.chatOverNote as jest.Mock).mockRejectedValueOnce(new Error('offline'));
     const { getByTestId, findByTestId } = render(<NoteEditorScreen />);

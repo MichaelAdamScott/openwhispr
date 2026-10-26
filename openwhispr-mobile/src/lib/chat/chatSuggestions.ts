@@ -1,5 +1,9 @@
 import type { GoogleCalendarEvent } from '@/data';
-import { parseCalendarParticipants } from '@/lib/calendar/meetingContext';
+import {
+  isDeclinedByUser,
+  isRoomLikeParticipant,
+  parseCalendarParticipants,
+} from '@/lib/calendar/meetingContext';
 import { tryParseNoteTimestamp } from '@/lib/parseNoteTimestamp';
 import { formatChatTime, isSameLocalDay } from './chatContext';
 
@@ -27,10 +31,24 @@ const STATIC_SUGGESTIONS: readonly ChatSuggestion[] = [
   'What did I decide recently?',
 ].map((question) => ({ label: question, prompt: question }));
 
-const declinedByUser = (event: GoogleCalendarEvent): boolean =>
-  parseCalendarParticipants(event.attendeesJson)?.some(
-    (participant) => participant.self && participant.responseStatus === 'declined',
-  ) ?? false;
+const TITLE_MAX_LENGTH = 80;
+
+// A block on the user's own calendar ("Lunch", "Focus time") invites nobody else, so there is
+// nobody to prep for. A guest who declined still makes it a meeting.
+const hasOtherPeople = (event: GoogleCalendarEvent): boolean =>
+  (parseCalendarParticipants(event.attendeesJson) ?? []).some(
+    (participant) => !participant.self && !isRoomLikeParticipant(participant),
+  );
+
+// The invite's title, written by whoever sent it, becomes part of the user's own question, so it
+// is kept to one short line with no quotes of its own to close the one around it.
+const toPromptTitle = (summary: string): string =>
+  summary
+    .replace(/["“”\p{Cc}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, TITLE_MAX_LENGTH)
+    .trim();
 
 const calendarSuggestion = (event: GoogleCalendarEvent, now: Date): ChatSuggestion | null => {
   // An all-day event has no start time to prep for.
@@ -42,9 +60,9 @@ const calendarSuggestion = (event: GoogleCalendarEvent, now: Date): ChatSuggesti
   // before its start leaves the window.
   const end = tryParseNoteTimestamp(event.endAt);
   if (end && end.getTime() <= now.getTime()) return null;
-  if (declinedByUser(event)) return null;
+  if (isDeclinedByUser(event) || !hasOtherPeople(event)) return null;
 
-  const summary = event.summary?.trim() || 'Untitled meeting';
+  const summary = toPromptTitle(event.summary ?? '') || 'Untitled meeting';
   return {
     label: `Prep me for ${summary}`,
     prompt: `Prep me for "${summary}" at ${formatChatTime(start)}.`,

@@ -62,7 +62,7 @@ export function ChatHomeScreen(): React.JSX.Element {
 
   const pending = useChatStore((s) => s.pending);
   const pendingTitle = useChatStore(selectPendingTitle);
-  const sendBlocked = useChatStore((s) => s.sendBlockedByWipe);
+  const sendBlocked = useChatStore((s) => s.sendBlocked);
   const firstName = useAuthStore((s) => getAccountFirstName(s.user));
   const activeMode = useProcessingModeStore((s) => s.activeMode);
   const { chatEnabled, gate } = useChatSendGate();

@@ -24,7 +24,7 @@ import {
   type ChatQuery,
   type ChatTimeScope,
 } from './chatContext';
-import { ChatNotesReadError } from './chatErrorMessage';
+import { ChatEmptyAnswerError, ChatNotesReadError } from './chatErrorMessage';
 import type { ChatMessage, ChatSource, ChatStep, ChatStepId } from './types';
 
 const MAX_MATCHED_NOTES = 4;
@@ -338,8 +338,9 @@ export async function runChatTurn(
     transcripts.set(note.id, transcript);
     return transcript.trim() !== '';
   };
-  // The repository ranks by matched terms across the title, the text, the summary and the
-  // transcript, so its order stands. It stops at the notes it keeps, so no spare transcript is read.
+  // The repository ranks by how well, and how rarely, the terms match the title, the text, the
+  // summary and the transcript, so its order stands. It stops at the notes it keeps, so no spare
+  // transcript is read.
   const pick = (candidates: Note[]): Note[] => {
     const picked: Note[] = [];
     for (const note of allowed(candidates)) {
@@ -447,6 +448,8 @@ export async function runChatTurn(
     response = await send(payload);
   }
   throwIfAborted(signal);
+  // A reply that was only a <think> block arrives stripped to nothing.
+  if (!response.text.trim()) throw new ChatEmptyAnswerError();
 
   setStep({ id: 'write', status: 'done', label: 'Wrote the answer' });
   return {

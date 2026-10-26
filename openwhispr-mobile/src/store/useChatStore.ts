@@ -41,9 +41,10 @@ interface ChatState {
   // Keyed by conversation, so a failure in one chat never takes another's Retry away. Held in
   // memory only: after a relaunch an unanswered question is read from the saved messages instead.
   failures: Record<string, ChatFailure>;
-  // Set when a send was refused because a failed chat wipe still holds the saved chats back, so the
-  // screens can say why nothing was sent. Cleared once the wipe goes through.
-  sendBlockedByWipe: boolean;
+  // Set when a send was refused because a failed chat wipe still holds the saved chats back, or the
+  // question couldn't be saved, so the screens can say why nothing was sent. Cleared on the next
+  // send, or once the chats load with no wipe pending.
+  sendBlocked: boolean;
   loadConversations: () => void;
   openConversation: (id: string) => void;
   // Clears the open conversation only while it is still `id`, so a screen that's leaving never
@@ -71,19 +72,14 @@ interface TurnRequest {
 
 const INITIAL_STATE: Pick<
   ChatState,
-  | 'conversations'
-  | 'activeConversationId'
-  | 'messages'
-  | 'pending'
-  | 'failures'
-  | 'sendBlockedByWipe'
+  'conversations' | 'activeConversationId' | 'messages' | 'pending' | 'failures' | 'sendBlocked'
 > = {
   conversations: [],
   activeConversationId: null,
   messages: [],
   pending: null,
   failures: {},
-  sendBlockedByWipe: false,
+  sendBlocked: false,
 };
 
 const withoutFailure = (
@@ -270,7 +266,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     loadConversations: () => {
       const conversations = readConversations();
-      set(isWipePending() ? { conversations } : { conversations, sendBlockedByWipe: false });
+      set(isWipePending() ? { conversations } : { conversations, sendBlocked: false });
     },
 
     openConversation: (id) => {
@@ -293,14 +289,14 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     send: (question, options) => {
       // Only this send's own refusal may say so: callers read the flag after any null.
-      set({ sendBlockedByWipe: false });
+      set({ sendBlocked: false });
       const text = question.trim();
       // A spoken question's own slot is released before it sends, so any pending entry is a turn or
       // a transcription this send would race.
       if (!text || get().pending) return null;
       // Nothing is written beside chats a failed wipe still holds back.
       if (!savedChatsReadable()) {
-        set({ sendBlockedByWipe: true });
+        set({ sendBlocked: true });
         return null;
       }
       // A screen can still hold the id of a conversation deleted under it.
@@ -308,10 +304,27 @@ export const useChatStore = create<ChatState>((set, get) => {
         return null;
       }
 
-      const conversationId =
-        options.conversationId ?? chatRepository.createConversation(toConversationTitle(text)).id;
-      const history = withoutUnansweredQuestions(readMessages(conversationId));
-      const userMessage = chatRepository.appendMessage({ conversationId, role: 'user', text });
+      let conversationId = options.conversationId;
+      let history: ChatMessage[];
+      let userMessage: ChatMessage;
+      try {
+        conversationId ??= chatRepository.createConversation(toConversationTitle(text)).id;
+        history = withoutUnansweredQuestions(readMessages(conversationId));
+        userMessage = chatRepository.appendMessage({ conversationId, role: 'user', text });
+      } catch (error) {
+        // A storage failure (a full disk) refuses the send, keeping the draft, and leaves no empty
+        // chat behind for the question it couldn't save.
+        console.warn('[chat] question could not be saved:', error);
+        if (conversationId && !options.conversationId) {
+          try {
+            chatRepository.deleteConversation(conversationId);
+          } catch {
+            // Listed empty until the next launch's read; nothing more to do from here.
+          }
+        }
+        set({ sendBlocked: true });
+        return null;
+      }
       set((state) => ({
         failures: withoutFailure(state.failures, conversationId),
         conversations: readConversations(),

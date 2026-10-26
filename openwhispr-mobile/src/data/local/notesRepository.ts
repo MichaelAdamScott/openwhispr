@@ -12,7 +12,6 @@ import {
   isNotNull,
   isNull,
   inArray,
-  gt,
   type SQL,
   type SQLWrapper,
 } from 'drizzle-orm';
@@ -20,6 +19,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { parseRemoteTranscript, serializeSegmentsForSync } from '@/lib/notes/remoteTranscript';
 import { randomUUID } from '@/lib/uuid';
 import { isFolderAwaitingUpload } from '@/lib/notes/folderUpload';
+import { LATIN_WORD_TERM, NUMBER_TERM, WHOLE_WORD_TERM } from '@/lib/chat/chatTerms';
 import {
   folderDeleteJournal,
   folders,
@@ -142,12 +142,6 @@ const NOTE_PUSH_ACK_FIELDS: ReadonlyArray<keyof Note> = [
 
 const pushRejectedKey = (localId: number): string => `note.pushRejected.${localId}`;
 
-// A short Latin term ("ai", "q3") would match inside longer words ("said", "email"), so it
-// matches whole words only, and a longer one only where a word starts: "more" never matches
-// "Furthermore", while "budget" still finds "budgets". Terms from other scripts match anywhere,
-// since Korean particles attach to the nouns they follow.
-const WHOLE_WORD_TERM = /^[a-z0-9]{1,2}$/;
-const LATIN_WORD_TERM = /^[\p{Script=Latin}0-9]+$/u;
 // What a word starts after: whitespace, punctuation, and the brackets, quotes (an elided "l’équipe"
 // too), slashes, dashes, tags and Markdown marks that open one. A LIKE per character skims the
 // text, where a GLOB class in front of the term would be tried at every position, several times
@@ -205,9 +199,6 @@ const followsCjk = (column: SQLWrapper, term: string): SQL => {
     sql` OR `,
   )}))`;
 };
-// Digits, or digit groups joined by `.`, `,` or `:` ("1.10", "10,000").
-const NUMBER_TERM = /^[0-9]+(?:[.,:][0-9]+)*$/;
-
 // A number matches whole numbers only: "10" never matches "100", "2010", "10:30", "1.10" or
 // "10,000", and "1.10" never matches "1.100". A `.`, `:` or `,` between digits joins them, but one
 // after a number ends it ("10.").
@@ -246,12 +237,14 @@ const chatTermMatcher = (
 ): ((column: SQLWrapper) => SQL) => {
   const globs = wholeTermPatterns(term);
   if (globs) {
-    // Padding the column lets a term at its start or end meet a boundary too.
+    // The GLOBs run over a padded copy of the column, so a term at its start or end meets a
+    // boundary too. That copy and the GLOBs cost several times a LIKE, so a LIKE rules out the
+    // rows that don't hold the term at all first.
     return (column) =>
-      sql`(${sql.join(
+      sql`(${likeAny(column, [`%${escapeLike(term)}%`])} AND (${sql.join(
         globs.map((pattern) => sql`(' ' || ${column} || ' ') GLOB ${pattern}`),
         sql` OR `,
-      )})`;
+      )}))`;
   }
 
   const capitalised = `${term.charAt(0).toUpperCase()}${term.slice(1)}`;
@@ -270,13 +263,51 @@ const chatTermMatcher = (
     sql`(${likeAny(column, anywhere)} AND (${likeAny(column, wordStart)} OR ${followsCjk(column, term)}))`;
 };
 
+interface ScoredChatNote {
+  id: number;
+  recency: string;
+  /** A digit per term: 2 when it matches the title, 1 elsewhere in the note, 0 nowhere. */
+  matches: string;
+}
+
+// A term counts for less the more of the notes searched hold it, so a word in most of them
+// ("answers", "time") weighs little next to the one naming the topic. A note is kept only when it
+// scores at least half as well as the best one: one sharing only a common word with the question
+// is dropped rather than sent, while notes on equally rare topics ("pricing", "hiring") all stay.
+// The weight never reaches zero, so a library where every note holds the term still finds them.
+const rankByRarity = (
+  rows: ScoredChatNote[],
+  searched: number,
+  limit: number,
+): { id: number; total: number }[] => {
+  const flags = rows.map((row) => Array.from(row.matches, Number));
+  const weights = flags[0].map((_, term) => {
+    const holding = flags.filter((noteFlags) => noteFlags[term] > 0).length;
+    return holding === 0 ? 0 : Math.log(1 + searched / holding);
+  });
+  const scores = flags.map((noteFlags) =>
+    noteFlags.reduce((score, flag, term) => score + flag * weights[term], 0),
+  );
+  const best = Math.max(...scores);
+  const kept = rows
+    .map((row, index) => ({ id: row.id, recency: row.recency, score: scores[index] }))
+    .filter(({ score }) => score >= best / 2)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.recency === b.recency) return 0;
+      return a.recency < b.recency ? 1 : -1;
+    });
+  return kept.slice(0, limit).map(({ id }) => ({ id, total: kept.length }));
+};
+
 // Notes carry SQLite's "YYYY-MM-DD HH:MM:SS" (UTC) or the server's ISO timestamps, so both sides go
 // through datetime() to compare instants rather than strings.
 const createdIn = ({ start, end, meetingsOnly }: ChatNoteWindow): SQL | undefined =>
   and(
     sql`datetime(${notes.createdAt}) >= datetime(${start.toISOString()})`,
     sql`datetime(${notes.createdAt}) < datetime(${end.toISOString()})`,
-    meetingsOnly ? eq(notes.noteType, 'meeting') : undefined,
+    // An uploaded recording is a meeting too, as the note editor treats it.
+    meetingsOnly ? inArray(notes.noteType, ['meeting', 'upload']) : undefined,
   );
 
 export class LocalNotesRepository implements NotesRepository {
@@ -728,7 +759,7 @@ export class LocalNotesRepository implements NotesRepository {
             .orderBy(desc(recency))
             .limit(options.limit)
             .all()
-        : this.rankChatMatches(terms, { visible, recency, total, limit: options.limit });
+        : this.rankChatMatches(terms, { visible, recency, limit: options.limit });
     if (ranked.length === 0) return { notes: [], total: 0 };
 
     const ids = ranked.map(({ id }) => id);
@@ -768,14 +799,9 @@ export class LocalNotesRepository implements NotesRepository {
 
   private rankChatMatches(
     terms: string[],
-    query: {
-      visible: SQL | undefined;
-      recency: SQL;
-      total: SQL<number>;
-      limit: number;
-    },
+    query: { visible: SQL | undefined; recency: SQL; limit: number },
   ): { id: number; total: number }[] {
-    const termScores = terms.map((term) => {
+    const termMatches = terms.map((term) => {
       const matches = chatTermMatcher(term);
       const spoken = chatTermMatcher(term, SPOKEN_WORD_STARTS_AFTER);
       // notes.transcript is JSON, whose keys ("source", "text", "speaker") would match every
@@ -790,27 +816,30 @@ export class LocalNotesRepository implements NotesRepository {
         WHEN ${matches(notes.content)} OR ${matches(notes.enhancedContent)} OR ${inTranscript} THEN 1
         ELSE 0 END)`;
     });
-    // The pool is cut at the limit, so it keeps the notes that match the most terms, a title match
-    // counting double, rather than whichever matching notes changed last. Each note is scored
-    // once: a LIMIT, even one that keeps every row, stops SQLite inlining the subquery or pushing
-    // the filter into it, either of which would run every LIKE and EXISTS again.
+    // Each note is scored once, as a digit per term. A LIMIT, even one that keeps every row, stops
+    // SQLite inlining the subquery or pushing the filter into it, either of which would run every
+    // LIKE and EXISTS again.
     const scored = this.database
       .select({
         id: notes.id,
         recency: sql<string>`${query.recency}`.as('recency'),
-        score: sql<number>`${sql.join(termScores, sql` + `)}`.as('score'),
+        matches: sql<string>`CAST(${sql.join(termMatches, sql` || `)} AS TEXT)`.as('matches'),
       })
       .from(notes)
       .where(query.visible)
       .limit(Number.MAX_SAFE_INTEGER)
       .as('scored');
-    return this.database
-      .select({ id: scored.id, total: query.total })
+    const rows = this.database
+      .select()
       .from(scored)
-      .where(gt(scored.score, 0))
-      .orderBy(desc(scored.score), desc(scored.recency))
-      .limit(query.limit)
+      .where(sql`${scored.matches} GLOB '*[12]*'`)
       .all();
+    if (rows.length === 0) return [];
+    // Counted apart: a window over the scored rows makes SQLite score every note again.
+    const searched =
+      this.database.select({ searched: count() }).from(notes).where(query.visible).get()
+        ?.searched ?? rows.length;
+    return rankByRarity(rows, searched, query.limit);
   }
 
   getActions(): Action[] {

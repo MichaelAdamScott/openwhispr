@@ -1,7 +1,7 @@
 import { LocalReasoningError, UNSUPPORTED_LANGUAGE_MESSAGE } from '@/lib/localReasoning';
 import { UPGRADE_REQUIRED_MESSAGE } from '@/lib/policyMessages';
 import type { LocalReasoningErrorCode } from '@/types';
-import { ChatNotesReadError, toChatErrorMessage } from '../chatErrorMessage';
+import { ChatEmptyAnswerError, ChatNotesReadError, toChatErrorMessage } from '../chatErrorMessage';
 
 const CONNECTION = 'Check your connection and try again.';
 const ON_DEVICE = 'On-device AI isn’t available right now.';
@@ -90,10 +90,32 @@ describe('toChatErrorMessage', () => {
     ).toBe('On-device AI declined to answer this. Try rephrasing your question.');
   });
 
+  it('says an empty answer came back, never that the connection failed', () => {
+    expect(toChatErrorMessage(new ChatEmptyAnswerError())).toBe(
+      'The answer came back empty. Try again.',
+    );
+  });
+
   it('says the notes couldn’t be read, never that the connection failed', () => {
     expect(toChatErrorMessage(new ChatNotesReadError(new Error('database is locked')))).toBe(
       'Couldn’t read your notes. Try again.',
     );
+  });
+
+  it('says what a Cloud error status means, never blaming the connection or showing its text', () => {
+    const cases: [number, string][] = [
+      [401, 'Your session expired. Sign in again to keep chatting.'],
+      [429, 'You’ve reached a usage limit. Try again later.'],
+      [500, 'OpenWhispr couldn’t answer right now. Try again.'],
+      [503, 'OpenWhispr couldn’t answer right now. Try again.'],
+      [403, 'OpenWhispr couldn’t take this question. Try again.'],
+      [413, 'OpenWhispr couldn’t take this question. Try again.'],
+    ];
+    for (const [status, message] of cases) {
+      // Shaped as apiClient's ApiError, whose module needs expo's fetch.
+      const apiError = Object.assign(new Error('raw server text'), { name: 'ApiError', status });
+      expect(toChatErrorMessage(apiError)).toBe(message);
+    }
   });
 
   it('keeps an organization policy message', () => {

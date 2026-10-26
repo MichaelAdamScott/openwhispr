@@ -111,7 +111,7 @@ describe('LocalNotesRepository.getChatCandidateNotes', () => {
     expect(result.map((note) => note.id)).toEqual([acme, bodyOnly]);
   });
 
-  it('ranks a meeting matching every term in its transcript above newer single matches', () => {
+  it('finds a meeting matching every term in its transcript, not newer notes sharing one word', () => {
     const { repo, db } = createMemoryRepository();
     const meeting = seed(repo, db, { title: 'Leadership sync', updatedAt: '2026-09-01 10:00:00' });
     repo.replaceSegments(meeting, [
@@ -124,10 +124,62 @@ describe('LocalNotesRepository.getChatCandidateNotes', () => {
     const result = repo.getChatCandidateNotes(['hiring', 'freeze'], {
       includePrivate: false,
       limit: 4,
-    }).notes;
+    });
 
-    expect(result[0].id).toBe(meeting);
-    expect(result).toHaveLength(4);
+    expect(result.notes.map((note) => note.id)).toEqual([meeting]);
+    expect(result.total).toBe(1);
+  });
+
+  it('drops notes sharing only a word most notes hold', () => {
+    const { repo, db } = createMemoryRepository();
+    const budget = seed(repo, db, {
+      title: 'Budget review',
+      content: 'Answers to the open budget questions.',
+      updatedAt: '2026-09-01 10:00:00',
+    });
+    for (let day = 10; day < 30; day += 1) {
+      seed(repo, db, { content: 'Answers from support.', updatedAt: `2026-10-${day} 10:00:00` });
+    }
+
+    const result = repo.getChatCandidateNotes(['answers', 'budget'], {
+      includePrivate: false,
+      limit: 8,
+    });
+
+    expect(result.notes.map((note) => note.id)).toEqual([budget]);
+  });
+
+  it('keeps notes on equally rare topics', () => {
+    const { repo, db } = createMemoryRepository();
+    const pricing = seed(repo, db, {
+      content: 'Pricing moves to tiers.',
+      updatedAt: '2026-10-02 10:00:00',
+    });
+    const hiring = seed(repo, db, {
+      content: 'Hiring two engineers.',
+      updatedAt: '2026-10-01 10:00:00',
+    });
+    for (let day = 10; day < 20; day += 1) {
+      seed(repo, db, { content: 'Unrelated standup.', updatedAt: `2026-10-${day} 10:00:00` });
+    }
+
+    const result = repo.getChatCandidateNotes(['pricing', 'hiring'], {
+      includePrivate: false,
+      limit: 8,
+    });
+
+    expect(result.notes.map((note) => note.id)).toEqual([pricing, hiring]);
+  });
+
+  it('still finds a term every note holds', () => {
+    const { repo, db } = createMemoryRepository();
+    const ids = [1, 2, 3].map((day) =>
+      seed(repo, db, { content: 'Roadmap review.', updatedAt: `2026-10-0${day} 10:00:00` }),
+    );
+
+    const result = repo.getChatCandidateNotes(['roadmap'], { includePrivate: false, limit: 8 });
+
+    expect(result.notes.map((note) => note.id)).toEqual([...ids].reverse());
   });
 
   it('treats % and _ in a term literally', () => {
@@ -451,12 +503,18 @@ describe('LocalNotesRepository.getChatCandidateNotes', () => {
       expect(noTerms.total).toBe(3);
     });
 
-    it('keeps only meetings when asked, and still hides private, deleted and left notes', () => {
+    it('keeps only meetings and uploaded recordings when asked, and still hides private, deleted and left notes', () => {
       const { repo, db } = createMemoryRepository();
       const createdAt = '2026-10-20 10:00:00';
       const meeting = seed(repo, db, {
         title: 'Standup',
         noteType: 'meeting',
+        createdAt,
+        updatedAt: '2026-10-20 11:00:00',
+      });
+      const upload = seed(repo, db, {
+        title: 'Uploaded call',
+        noteType: 'upload',
         createdAt,
         updatedAt: createdAt,
       });
@@ -476,8 +534,8 @@ describe('LocalNotesRepository.getChatCandidateNotes', () => {
         window: { ...window, meetingsOnly: true },
       });
 
-      expect(result.notes.map((note) => note.id)).toEqual([meeting]);
-      expect(result.total).toBe(1);
+      expect(result.notes.map((note) => note.id).sort()).toEqual([meeting, upload].sort());
+      expect(result.total).toBe(2);
     });
   });
 });

@@ -45,6 +45,9 @@ const toPreview = (text: string | null): string =>
     .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+\.\s+)/gm, '')
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/~~(.+?)~~/g, '$1')
+    // A single * or _ only around a word, so "snake_case" and "5 * 3 * 2" stay as written.
+    .replace(/(?<![\p{L}\p{N}*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\p{L}\p{N}*])/gu, '$1')
+    .replace(/(?<![\p{L}\p{N}_])_(?!\s)([^_\n]+?)(?<!\s)_(?![\p{L}\p{N}_])/gu, '$1')
     .replace(/`/g, '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -85,7 +88,7 @@ export class LocalChatRepository {
     const lastText = sql<string | null>`(
       SELECT ${chatMessages.text} FROM ${chatMessages}
       WHERE ${chatMessages.conversationId} = ${chatConversations}.${sql.identifier(chatConversations.id.name)}
-      ORDER BY ${chatMessages.createdAt} DESC, ${chatMessages}.rowid DESC
+      ORDER BY ${chatMessages}.rowid DESC
       LIMIT 1
     )`;
     const query = this.database
@@ -122,13 +125,17 @@ export class LocalChatRepository {
   }
 
   getMessages(conversationId: string): ChatMessage[] {
-    return this.database
-      .select()
-      .from(chatMessages)
-      .where(eq(chatMessages.conversationId, conversationId))
-      .orderBy(asc(chatMessages.createdAt), asc(sql`${chatMessages}.rowid`))
-      .all()
-      .map(toMessage);
+    return (
+      this.database
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.conversationId, conversationId))
+        // Insertion order, not the clock: a clock set back between a question and its answer would
+        // put the answer first.
+        .orderBy(asc(sql`${chatMessages}.rowid`))
+        .all()
+        .map(toMessage)
+    );
   }
 
   appendMessage(input: NewChatMessage): ChatMessage {

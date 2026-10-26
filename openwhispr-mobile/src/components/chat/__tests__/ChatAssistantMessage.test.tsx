@@ -27,24 +27,7 @@ jest.mock('@/components/notes/MarkdownRenderer', () => ({
   },
 }));
 
-// A real store, so a deleted note re-renders the chips as the app's notes list would.
-const mockDeletedNoteIds = new Set<number>();
-jest.mock('@/store/useNotesStore', () => {
-  const { create } = require('zustand');
-  return {
-    useNotesStore: create(() => ({
-      notes: [],
-      getNoteById: (id: number) => (mockDeletedNoteIds.has(id) ? null : { id }),
-    })),
-  };
-});
-const { useNotesStore: mockNotesStore } = jest.requireMock('@/store/useNotesStore') as {
-  useNotesStore: { setState: (state: { notes: unknown[] }) => void };
-};
-
-beforeEach(() => {
-  mockDeletedNoteIds.clear();
-});
+const NONE_MISSING: ReadonlySet<number> = new Set();
 
 const message: ChatMessage = {
   id: 'm1',
@@ -60,7 +43,11 @@ describe('ChatAssistantMessage', () => {
   it('opens a source note', () => {
     const onOpenNote = jest.fn();
     const { getByText, getByRole } = render(
-      <ChatAssistantMessage message={message} onOpenNote={onOpenNote} />,
+      <ChatAssistantMessage
+        message={message}
+        onOpenNote={onOpenNote}
+        missingNoteIds={NONE_MISSING}
+      />,
     );
     expect(getByRole('link')).toBeTruthy();
     fireEvent.press(getByText('Pricing call'));
@@ -76,40 +63,60 @@ describe('ChatAssistantMessage', () => {
       ],
     };
     const { queryByText, getByText } = render(
-      <ChatAssistantMessage message={read} onOpenNote={jest.fn()} />,
+      <ChatAssistantMessage message={read} onOpenNote={jest.fn()} missingNoteIds={NONE_MISSING} />,
     );
     expect(getByText('Pricing call')).toBeTruthy();
     expect(queryByText('Roadmap')).toBeNull();
     expect(getByText('Searched your notes · 1 source')).toBeTruthy();
   });
 
-  it('shows no source when the answer named none of the notes it read', () => {
+  it('shows no source when the answer named none of the notes it read, and says they were read', () => {
     const read: ChatMessage = {
       ...message,
       sources: [{ noteId: 8, title: 'Roadmap', cited: false }],
     };
     const { queryByRole, getByText } = render(
-      <ChatAssistantMessage message={read} onOpenNote={jest.fn()} />,
+      <ChatAssistantMessage message={read} onOpenNote={jest.fn()} missingNoteIds={NONE_MISSING} />,
     );
     expect(queryByRole('link')).toBeNull();
-    expect(getByText('Searched your notes · no matches')).toBeTruthy();
+    expect(getByText('Searched your notes · 1 read')).toBeTruthy();
   });
 
-  it('disables the chip of a note deleted since the answer, as soon as it goes', () => {
+  it('says no notes matched only when none were read, and claims nothing when that is unknown', () => {
+    const none: ChatMessage = { ...message, sources: [] };
+    expect(
+      render(
+        <ChatAssistantMessage
+          message={none}
+          onOpenNote={jest.fn()}
+          missingNoteIds={NONE_MISSING}
+        />,
+      ).getByText('Searched your notes · no matches'),
+    ).toBeTruthy();
+    expect(
+      render(
+        <ChatAssistantMessage
+          message={{ ...none, sourcesUnreadable: true }}
+          onOpenNote={jest.fn()}
+          missingNoteIds={NONE_MISSING}
+        />,
+      ).getByText('Searched your notes'),
+    ).toBeTruthy();
+  });
+
+  it('disables the chip of a deleted note and keeps the others', () => {
     const onOpenNote = jest.fn();
     const twoSources: ChatMessage = {
       ...message,
       sources: [...message.sources, { noteId: 8, title: 'Roadmap' }],
     };
     const { getByLabelText } = render(
-      <ChatAssistantMessage message={twoSources} onOpenNote={onOpenNote} />,
+      <ChatAssistantMessage
+        message={twoSources}
+        onOpenNote={onOpenNote}
+        missingNoteIds={new Set([7])}
+      />,
     );
-    expect(getByLabelText('Pricing call').props.accessibilityState).toEqual({ disabled: false });
-
-    mockDeletedNoteIds.add(7);
-    act(() => {
-      mockNotesStore.setState({ notes: [] });
-    });
 
     const deleted = getByLabelText('Pricing call, deleted');
     expect(deleted.props.accessibilityState).toEqual({ disabled: true });
@@ -123,7 +130,11 @@ describe('ChatAssistantMessage', () => {
     jest.useFakeTimers();
     const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
     const { getByLabelText, queryByText } = render(
-      <ChatAssistantMessage message={message} onOpenNote={jest.fn()} />,
+      <ChatAssistantMessage
+        message={message}
+        onOpenNote={jest.fn()}
+        missingNoteIds={NONE_MISSING}
+      />,
     );
     expect(queryByText('Copied')).toBeNull();
 
@@ -145,7 +156,11 @@ describe('ChatAssistantMessage', () => {
   it('keeps "Copied" for its full time after a second copy', async () => {
     jest.useFakeTimers();
     const { getByLabelText, queryByText } = render(
-      <ChatAssistantMessage message={message} onOpenNote={jest.fn()} />,
+      <ChatAssistantMessage
+        message={message}
+        onOpenNote={jest.fn()}
+        missingNoteIds={NONE_MISSING}
+      />,
     );
     await act(async () => {
       fireEvent.press(getByLabelText('Copy answer'));
@@ -171,7 +186,11 @@ describe('ChatAssistantMessage', () => {
   it('survives a failed clipboard write, claiming no copy', async () => {
     (Clipboard.setStringAsync as jest.Mock).mockRejectedValueOnce(new Error('denied'));
     const { getByLabelText, queryByText } = render(
-      <ChatAssistantMessage message={message} onOpenNote={jest.fn()} />,
+      <ChatAssistantMessage
+        message={message}
+        onOpenNote={jest.fn()}
+        missingNoteIds={NONE_MISSING}
+      />,
     );
     await act(async () => {
       fireEvent.press(getByLabelText('Copy answer'));
@@ -182,7 +201,11 @@ describe('ChatAssistantMessage', () => {
 
   it('offers Copy alone', () => {
     const { queryByLabelText } = render(
-      <ChatAssistantMessage message={message} onOpenNote={jest.fn()} />,
+      <ChatAssistantMessage
+        message={message}
+        onOpenNote={jest.fn()}
+        missingNoteIds={NONE_MISSING}
+      />,
     );
     expect(queryByLabelText('Share answer')).toBeNull();
   });

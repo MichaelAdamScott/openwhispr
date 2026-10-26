@@ -115,7 +115,9 @@ export function ChatComposer({
   inputRef,
 }: ChatComposerProps): React.JSX.Element {
   const hasText = value.trim().length > 0;
-  // A turn the screen doesn't own still locks it, since only one turn runs at a time.
+  // A turn the screen doesn't own still locks sending, since only one turn runs at a time. The
+  // input stays editable, so the keyboard stays up through a send and the next question can be
+  // typed meanwhile.
   const locked = disabled || busy;
   // The voice states take the input's place at its resting height, so the composer doesn't jump.
   const fieldHeight = tall ? 'min-h-[60px]' : 'min-h-[40px]';
@@ -145,7 +147,7 @@ export function ChatComposer({
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={iosColor('tertiaryLabel')}
-          editable={!locked}
+          editable={!disabled}
           multiline
           textAlignVertical="top"
           className={`max-h-[120px] flex-1 py-2 text-[16px] leading-[22px] text-label ${fieldHeight}`}

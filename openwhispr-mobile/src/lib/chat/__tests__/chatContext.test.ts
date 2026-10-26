@@ -67,6 +67,12 @@ describe('parseChatQuery', () => {
       ['Anything recent?', day(16), day(23), 'the last 7 days', true],
       ['What did I decide Recently?', day(16), day(23), 'the last 7 days', true],
       ['Who did I meet lately?', day(16), day(23), 'the last 7 days', true],
+      ['What did we discuss this morning?', day(22), day(23), 'today', false],
+      ['What happened this past week?', day(16), day(23), 'the last 7 days', false],
+      ['Summarize the past week', day(16), day(23), 'the last 7 days', false],
+      ['Summarize the last few days', day(16), day(23), 'the last 7 days', false],
+      ['What did I do this month?', day(1), day(23), 'this month', false],
+      ['What did I do last month?', new Date(2026, 8, 1), day(1), 'last month', false],
     ];
     for (const [question, start, end, label, soft] of cases) {
       expect(parseChatQuery(question, NOW).scope).toEqual({
@@ -219,8 +225,8 @@ describe('extractSearchTerms', () => {
   });
 
   it('drops two-character words that are neither codes nor capitalised', () => {
-    expect(extractSearchTerms('Did he go over the ai email? Hi, OK')).toEqual(['over', 'email']);
-    expect(extractSearchTerms('Ask HR about 2x pay')).toEqual(['ask', 'hr', '2x', 'pay']);
+    expect(extractSearchTerms('Did he send the ai email? Hi, OK')).toEqual(['send', 'email']);
+    expect(extractSearchTerms('Email HR about 2x pay')).toEqual(['email', 'hr', '2x', 'pay']);
   });
 
   it('keeps two-syllable Korean words', () => {
@@ -239,7 +245,7 @@ describe('extractSearchTerms', () => {
 
   it('keeps a number joined by "." "," or ":" as one term', () => {
     expect(extractSearchTerms('What ships in 1.10?')).toEqual(['ships', '1.10']);
-    expect(extractSearchTerms('Who owes the $10,000?')).toEqual(['owes', '10,000']);
+    expect(extractSearchTerms('Who paid the $10,000?')).toEqual(['paid', '10,000']);
     expect(extractSearchTerms('Is 10. enough, or 10.5:1?')).toEqual(['10', 'enough', '10.5:1']);
     expect(extractSearchTerms('Who pays 1,250,000?')).toEqual(['pays', '1,250,000']);
   });
@@ -255,10 +261,60 @@ describe('extractSearchTerms', () => {
     expect(extractSearchTerms('Standup at 10:30am about Q3')).toEqual(['standup', 'q3']);
   });
 
-  it('splits Chinese and Japanese runs into bigrams', () => {
-    expect(extractSearchTerms('预算会议')).toEqual(['预算', '算会', '会议']);
+  it('splits Chinese and Japanese runs into bigrams, those at even offsets first', () => {
+    expect(extractSearchTerms('预算会议')).toEqual(['预算', '会议', '算会']);
     expect(extractSearchTerms('Acme 会議')).toEqual(['acme', '会議']);
-    expect(extractSearchTerms('第三季度预算会议的结论是什么')).toHaveLength(6);
+    expect(extractSearchTerms('第三季度预算会议的结论是什么')).toEqual([
+      '第三',
+      '季度',
+      '预算',
+      '会议',
+      '结论',
+      '三季',
+    ]);
+  });
+
+  it('splits a Chinese question at its asking words and particles', () => {
+    expect(extractSearchTerms('请总结一下我们关于预算会议的讨论')).toEqual([
+      '预算',
+      '会议',
+      '算会',
+    ]);
+  });
+
+  it('splits a Japanese question at its hiragana', () => {
+    expect(extractSearchTerms('予算会議で何を決めましたか')).toEqual(['予算', '会議', '算会']);
+  });
+
+  it('keeps the particles of a quoted title', () => {
+    expect(extractSearchTerms('', ['"我们的预算"'])).toEqual(['我们', '的预', '们的', '预算']);
+  });
+
+  it('drops the endings of contractions', () => {
+    expect(extractSearchTerms("What didn't we finish?")).toEqual(['finish']);
+    expect(extractSearchTerms('What don’t I know about Falcon?')).toEqual(['falcon']);
+    expect(extractSearchTerms("Let's look at Dana's roadmap")).toEqual(['dana', 'roadmap']);
+  });
+
+  it('leaves a recap question no words to search for', () => {
+    for (const question of [
+      'What did we agree on?',
+      'What did I miss?',
+      'Catch me up',
+      'What are the next steps?',
+      'What did I promise?',
+      'What did we go over?',
+      'What did we cover in the call?',
+      'Where did we land?',
+      "What's left to do?",
+      'What questions came up?',
+      'What did they ask for?',
+      'Who owes me something?',
+      'Recap please',
+      'What did we do two weeks ago?',
+    ]) {
+      expect(extractSearchTerms(question)).toEqual([]);
+    }
   });
 });
 
@@ -364,6 +420,39 @@ describe('buildChatPayload', () => {
     expect(text).toContain('[...middle omitted for chat context...]');
   });
 
+  it('keeps the matching lines of a long transcript that its start and end leave out', () => {
+    const filler = (label: string): string =>
+      Array.from({ length: 200 }, (_, index) => `[00:${index}] Sam: ${label} filler line.`).join(
+        '\n',
+      );
+    const transcript = `${filler('Early')}\n[30:00] Dana: Pricing moves to tiers.\n${filler('Late')}`;
+    const notes = [makeNote({ id: 1, title: 'Weekly sync' })];
+
+    const { text } = buildPayload({
+      question: 'What did Dana say about pricing?',
+      notes,
+      transcripts: new Map([[1, transcript]]),
+    });
+
+    expect(text).toContain(
+      'Transcript passages matching the question:\n[30:00] Dana: Pricing moves to tiers.\n\n[00:0] Sam',
+    );
+    expect(text).toContain('[...middle omitted for chat context...]');
+  });
+
+  it('sends a short transcript whole, with no passages repeating it', () => {
+    const notes = [makeNote({ id: 1, title: 'Weekly sync' })];
+
+    const { text } = buildPayload({
+      question: 'What did Dana say about pricing?',
+      notes,
+      transcripts: new Map([[1, '[00:00] Dana: Pricing moves to tiers.']]),
+    });
+
+    expect(text).not.toContain('Transcript passages');
+    expect(text).toContain('[00:00] Dana: Pricing moves to tiers.');
+  });
+
   it('skips a note with nothing to read', () => {
     const notes = [
       makeNote({ id: 1, title: 'Failed recording' }),
@@ -374,6 +463,15 @@ describe('buildChatPayload', () => {
 
     expect(text).not.toContain('Failed recording');
     expect(sources).toEqual([{ noteId: 2, title: 'Pricing' }]);
+  });
+
+  it('heads and lists a note with no title as Untitled', () => {
+    const { text, sources } = buildPayload({
+      notes: [makeNote({ id: 1, title: ' ', content: 'Some text.' })],
+    });
+
+    expect(text).toMatch(/### Untitled \(updated [^)]+\)\nSome text\./);
+    expect(sources).toEqual([{ noteId: 1, title: 'Untitled' }]);
   });
 
   it('says how many of a period’s notes it sends, each with the day it was made', () => {
@@ -601,6 +699,19 @@ describe('buildChatPayload', () => {
       expect(text).toContain('Transcript passages matching the question:\n[00:05] Sam: Bugs.\n');
     });
 
+    it('finds a number after a "." that follows a letter, as the search does', () => {
+      const { text } = buildPayload({
+        question: 'What changed in 10?',
+        notes: [meeting],
+        transcripts: new Map([[1, '[00:00] Sam: v.10 is out.\n[00:05] Sam: 100 users.']]),
+      });
+
+      expect(text).toContain(
+        'Transcript passages matching the question:\n[00:00] Sam: v.10 is out.\n',
+      );
+      expect(text).not.toContain('100 users');
+    });
+
     it('keeps the matching lines when a tight budget cuts the note', () => {
       const { text } = buildPayload({
         question: 'What did Dana say about the SSO bug?',
@@ -663,6 +774,21 @@ describe('buildChatPayload', () => {
     expect(text).toContain('- Untitled meeting · ');
     expect(text).not.toContain('Already over');
     expect(text).not.toContain('Next week');
+  });
+
+  it('leaves out a meeting the user declined', () => {
+    const declined = {
+      ...makeEvent('Budget review', new Date(2026, 9, 22, 11, 0), new Date(2026, 9, 22, 12, 0)),
+      attendeesJson: JSON.stringify([
+        { email: 'me@example.com', self: true, responseStatus: 'declined' },
+      ]),
+    };
+    const kept = makeEvent('Standup', new Date(2026, 9, 22, 10, 0), new Date(2026, 9, 22, 10, 30));
+
+    const { text } = buildPayload({ calendar: [declined, kept] });
+
+    expect(text).toContain('Standup');
+    expect(text).not.toContain('Budget review');
   });
 
   it("labels tomorrow's meetings", () => {
@@ -772,5 +898,59 @@ describe('markCitedSources', () => {
 
   it('needs the whole title, not a word inside another', () => {
     expect(markCitedSources(sources, 'The async job is syncing.')[1].cited).toBe(false);
+  });
+
+  it('matches typographic quotes and dashes, and Markdown escapes, as typed', () => {
+    const typed = [
+      { noteId: 1, title: 'Dana’s 1:1' },
+      { noteId: 2, title: 'Q3 – planning' },
+      { noteId: 3, title: 'snake_case review' },
+    ];
+
+    expect(
+      markCitedSources(typed, "In Dana's 1:1, Q3 - planning and snake\\_case review…").map(
+        (source) => source.cited,
+      ),
+    ).toEqual([true, true, true]);
+  });
+
+  it('finds a Chinese or Japanese title with no space around it', () => {
+    const titled = [
+      { noteId: 1, title: '预算会议' },
+      { noteId: 2, title: '予算会議' },
+    ];
+
+    expect(
+      markCitedSources(titled, '根据预算会议，预算不变。予算会議では決まりました。').map(
+        (source) => source.cited,
+      ),
+    ).toEqual([true, true]);
+  });
+
+  it('never cites a placeholder title', () => {
+    const placeholders = [
+      { noteId: 1, title: 'Untitled meeting' },
+      { noteId: 2, title: 'New note' },
+    ];
+
+    expect(
+      markCitedSources(placeholders, 'Your untitled meeting and the new note both say so.').some(
+        (source) => source.cited,
+      ),
+    ).toBe(false);
+  });
+
+  it('cites a title named only inside a longer one for the longer one alone', () => {
+    const nested = [
+      { noteId: 1, title: 'Pricing' },
+      { noteId: 2, title: 'Pricing sync' },
+    ];
+
+    expect(
+      markCitedSources(nested, 'From Pricing sync: it stays.').map((source) => source.cited),
+    ).toEqual([false, true]);
+    expect(
+      markCitedSources(nested, 'Pricing sync and Pricing agree.').map((source) => source.cited),
+    ).toEqual([true, true]);
   });
 });

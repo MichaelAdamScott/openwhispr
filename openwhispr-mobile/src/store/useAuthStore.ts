@@ -20,28 +20,13 @@ import { Sentry } from '@/lib/sentry';
 import { useUsageStore } from '@/store/useUsageStore';
 import { clearAllSessions as clearAgentSessions } from '@/services/agent/AgentComposerService';
 import { claimNoteShareTokens, clearNoteShareTokens } from '@/lib/notes/noteShareTokens';
+import { withChatHistory } from '@/lib/chat/withChatHistory';
 
 const GUEST_SESSION_KEY = 'openwhispr_guest_session';
 
 // Explicit auth choices wait for the startup request to finish writing its cookie,
 // including failures, so its late result cannot overwrite the chosen session.
 let anonymousSignInInFlight: Promise<void> | null = null;
-
-// Required lazily: the chat store reaches SQLite through @/data. A module that fails to load is
-// reported rather than thrown, so it can't leave a sign-out or account deletion half done.
-const withChatHistory = (
-  use: (chatHistory: typeof import('@/lib/chat/chatHistory')) => void,
-): void => {
-  try {
-    use(require('@/lib/chat/chatHistory') as typeof import('@/lib/chat/chatHistory'));
-  } catch (error) {
-    console.warn('[auth] chat history was not loaded:', error);
-    Sentry.captureException(error, {
-      level: 'warning',
-      tags: { feature: 'chat', operation: 'load-history' },
-    });
-  }
-};
 
 type SessionResult = {
   user: AuthUser | null;

@@ -86,7 +86,7 @@ import {
   LocalReasoningError,
   shouldUseLocalReasoning,
 } from '@/lib/localReasoning';
-import { toChatErrorMessage } from '@/lib/chat/chatErrorMessage';
+import { ChatEmptyAnswerError, toChatErrorMessage } from '@/lib/chat/chatErrorMessage';
 import { providerDisplayName } from '@/lib/mobileProviders';
 import { promptLocalReasoningFallback } from '@/lib/localReasoningFallback';
 import { confirmCloudOnce, confirmDestructive } from '@/lib/alerts';
@@ -1021,6 +1021,7 @@ export default function NoteEditorScreen({
           response = await askAbout(sourceContext);
         }
         if (controller.signal.aborted) return;
+        if (!response.text.trim()) throw new ChatEmptyAnswerError();
         setChatMessages((current) => [
           ...current,
           {
@@ -1033,9 +1034,9 @@ export default function NoteEditorScreen({
       } catch (error) {
         if (controller.signal.aborted) return;
         // An on-device error's text comes from the native layer, so it gets the same worded copy as
-        // the Chat tab.
+        // the Chat tab, and so does an empty answer.
         setChatError(
-          error instanceof LocalReasoningError
+          error instanceof LocalReasoningError || error instanceof ChatEmptyAnswerError
             ? toChatErrorMessage(error, { surface: 'noteChat' })
             : error instanceof Error
               ? error.message

@@ -46,6 +46,11 @@ interface CallApiOptions {
   agentName?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /**
+   * Cleanup keeps the dictated text when the server returns none. A chat answer must not, or the
+   * whole prompt, notes included, would show as the answer.
+   */
+  keepTextOnEmptyReply?: boolean;
 }
 
 export class ReasoningService {
@@ -100,7 +105,8 @@ export class ReasoningService {
       throw error;
     }
 
-    const content = stripThinkingTags(data.text || text);
+    const keepText = options.keepTextOnEmptyReply ?? true;
+    const content = stripThinkingTags(data.text || (keepText ? text : ''));
 
     if (__DEV__) {
       console.log(
@@ -278,6 +284,7 @@ export class ReasoningService {
     return this.callApi(request.text, {
       systemPrompt: request.systemPrompt,
       signal: request.signal,
+      keepTextOnEmptyReply: false,
     });
   }
 }

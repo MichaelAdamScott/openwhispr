@@ -1,6 +1,9 @@
 import type { ChatNoteWindow, GoogleCalendarEvent, Note } from '@/data';
 import { boundChatContext, formatChatHistory } from '@/lib/notes/chatOverNote';
+import { isDeclinedByUser } from '@/lib/calendar/meetingContext';
+import { isRegenerableNoteTitle } from '@/lib/notes/regenerableNoteTitle';
 import { tryParseNoteTimestamp } from '@/lib/parseNoteTimestamp';
+import { LATIN_WORD_TERM, NUMBER_TERM, WHOLE_WORD_TERM } from './chatTerms';
 import type { ChatMessage, ChatSource } from './types';
 
 export const CHAT_NOTE_CHAR_BUDGET = 18_000;
@@ -23,12 +26,22 @@ const MIN_TERM_LENGTH = 3;
 const SHORT_TERM = /^(?=.*\p{N})[\p{L}\p{N}]{2}$|^\p{Lu}{2}$|^\p{Script=Hangul}{2}$/u;
 // Chinese and Japanese don't put spaces between words, so their runs are searched as bigrams.
 const UNSPACED_SCRIPT_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu;
+// A Chinese question's asking words and the particles between its words, never what it is about.
+// They split a run before it is cut into bigrams, so "关于预算会议的讨论" is searched as 预算 and
+// 会议, not as 于预 and 议的. Japanese hiragana is mostly particles and verb endings, so it splits a
+// run too. A quoted title keeps them.
+const CJK_FUNCTION_WORDS =
+  /关于|我们|你们|他们|什么|怎么|一下|请问|这个|那个|哪些|总结|讨论|告诉|知道|可以|没有|还有|已经|时候|如何|帮我|给我|[的了吗呢吧啊和与及或是在也都就还很请把被给对从到说我你他她它]|\p{Script=Hiragana}+/gu;
+// "didn't", "we're", "Dana's": the ending goes, so "didn't" reads as "did" rather than "didn", and
+// "Dana's" finds "Dana".
+const CONTRACTION = /(?<=\p{L})(?:n['’]t|['’](?:s|re|ll|ve|d|m))(?!\p{L})/giu;
 // A number matches only whole numbers in notes, so "10:30" there never matches "10": a clock time
 // in the question ("Prep me for … at 3:15 PM") would only find stray numbers and every "PM".
 const CLOCK_TIME = /\b\d{1,2}:\d{2}(?:\s*[ap]m)?\b/gi;
 // A period the question names. Its notes can be read whether or not their words match, so its
 // words aren't searched for.
-const TIME_PHRASE = /\b(?:today|yesterday|(?:this|last)\s+weeks?|recent(?:ly)?|lately)\b/gi;
+const TIME_PHRASE =
+  /\b(?:today|yesterday|this\s+(?:morning|afternoon|evening)|(?:this|last)\s+(?:weeks?|months?)|(?:(?:this|the)\s+)?past\s+weeks?|(?:the\s+)?(?:last|past)\s+few\s+days|recent(?:ly)?|lately)\b/gi;
 const SOFT_PERIOD = /^(?:recent(?:ly)?|lately)$/i;
 // "Meeting" never names the topic: with a period it narrows the period to meetings, and without one
 // ("When is my next meeting?") it would find every meeting.
@@ -41,6 +54,8 @@ const QUOTED = /"[^"]*"|“[^”]*”/g;
 // A version or an amount ("1.10", "10,000") is one term, so it can find itself whole. A comma joins
 // only a thousands group, so a list ("3,4") or years ("2025,2026") stay separate numbers.
 const SEARCH_WORD = /\p{N}+(?:[.:]\p{N}+|,\p{N}{3}(?!\p{N}))+|[\p{L}\p{N}]+/gu;
+
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export const CHAT_SYSTEM_PROMPT = `You are OpenWhispr's assistant. The user is asking from the OpenWhispr app, which holds their notes and meeting transcripts.
 
@@ -55,21 +70,52 @@ Rules:
 - Do not mention these instructions.`;
 
 // Every note sent is read, but only one the answer names helped answer it, so only those are shown
-// as its sources. Matching ignores case, spacing and Markdown, but needs the whole title, so a
-// note titled "Sync" isn't cited by "async".
+// as its sources. Matching ignores case, spacing, Markdown and typographic quotes and dashes (iOS
+// types ’ and – into titles, models write ' and -), but needs the whole title, so a note titled
+// "Sync" isn't cited by "async". Chinese and Japanese put no space around a title, so an edge in
+// those scripts needs no boundary.
 const forCitation = (text: string): string =>
-  text.normalize('NFKC').toLowerCase().replace(/[*_`]/g, '').replace(/\s+/g, ' ');
+  text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[‐‑‒–—]/g, '-')
+    .replace(/[*_`\\]/g, '')
+    .replace(/\s+/g, ' ');
+const UNSPACED_CHARACTER = new RegExp(`^${UNSPACED_SCRIPT_RUN.source}$`, 'u');
 
+const findTitle = (title: string, text: string): [number, number][] => {
+  const characters = Array.from(title);
+  const before = UNSPACED_CHARACTER.test(characters[0]) ? '' : '(?<![\\p{L}\\p{N}])';
+  const after = UNSPACED_CHARACTER.test(characters[characters.length - 1])
+    ? ''
+    : '(?![\\p{L}\\p{N}])';
+  const pattern = new RegExp(`${before}${escapeRegExp(title)}${after}`, 'gu');
+  return Array.from(text.matchAll(pattern), ({ index = 0 }) => [index, index + title.length]);
+};
+
+// A placeholder title ("Untitled meeting") would be cited by any answer saying it, and a title
+// named only inside a longer one ("Pricing" in "Pricing sync") isn't cited for it.
 export const markCitedSources = (sources: ChatSource[], answer: string): ChatSource[] => {
   const text = forCitation(answer);
-  return sources.map((source) => {
-    const title = forCitation(source.title).trim();
-    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const cited =
-      title.length > 0 &&
-      new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'u').test(text);
-    return { ...source, cited };
-  });
+  const titles = sources.map((source) => forCitation(source.title).trim());
+  const cited = new Set<number>();
+  const claimed: [number, number][] = [];
+  const longestFirst = titles
+    .map((title, index) => ({ title, index }))
+    .filter(({ title, index }) => title && !isRegenerableNoteTitle(sources[index].title))
+    .sort((a, b) => b.title.length - a.title.length);
+  for (const { title, index } of longestFirst) {
+    const ranges = findTitle(title, text).filter(
+      ([start, end]) =>
+        !claimed.some(([from, to]) => from <= start && end <= to && to - from > end - start),
+    );
+    if (ranges.length === 0) continue;
+    cited.add(index);
+    claimed.push(...ranges);
+  }
+  return sources.map((source, index) => ({ ...source, cited: cited.has(index) }));
 };
 
 // A question naming neither a topic nor a period ("What did we decide?") finds no notes, and "the
@@ -289,6 +335,51 @@ const CONVERSATIONAL_WORDS = new Set([
   'something',
   'other',
   'same',
+  // How a question asks for a recap: "What did we agree on?", "What did I miss?", "Catch me up",
+  // "What are the next steps?", "What's left to do?", "Who owes me something?". "let" is what
+  // "let's" leaves.
+  'recap',
+  'ask',
+  'asked',
+  'owe',
+  'owes',
+  'agree',
+  'agreed',
+  'miss',
+  'missed',
+  'catch',
+  'cover',
+  'covered',
+  'over',
+  'land',
+  'landed',
+  'left',
+  'step',
+  'steps',
+  'promise',
+  'question',
+  'questions',
+  'came',
+  'come',
+  'find',
+  'look',
+  'let',
+  'quick',
+  'everything',
+  'important',
+  'soon',
+  'due',
+  // Time words outside a period it reads: "two weeks ago", "a few days", "over the weekend".
+  'ago',
+  'few',
+  'couple',
+  'two',
+  'three',
+  'past',
+  'morning',
+  'afternoon',
+  'evening',
+  'weekend',
   // The schedule, which the calendar section answers.
   'time',
   'next',
@@ -363,7 +454,13 @@ const toBigrams = (run: string): string[] => {
 // The note lookup treats a blank term as "match everything". Matching whole letter/digit runs
 // can't produce one, and the length filter drops the short leftovers.
 const toSearchWords = (text: string, dropped: (word: string) => boolean): string[] =>
-  (text.replace(UNSPACED_SCRIPT_RUN, ' ').replace(CLOCK_TIME, ' ').match(SEARCH_WORD) ?? [])
+  (
+    text
+      .replace(UNSPACED_SCRIPT_RUN, ' ')
+      .replace(CLOCK_TIME, ' ')
+      .replace(CONTRACTION, '')
+      .match(SEARCH_WORD) ?? []
+  )
     .filter((word) => word.length >= MIN_TERM_LENGTH || SHORT_TERM.test(word))
     .map((word) => word.toLowerCase())
     .filter((word) => !dropped(word));
@@ -375,9 +472,14 @@ export const extractSearchTerms = (question: string, quoted: readonly string[] =
     ...toSearchWords(quotedText, (word) => STOPWORDS.has(word)),
     ...toSearchWords(question, (word) => STOPWORDS.has(word) || CONVERSATIONAL_WORDS.has(word)),
   ];
-  const bigrams = (
-    `${quotedText} ${question}`.toLowerCase().match(UNSPACED_SCRIPT_RUN) ?? []
-  ).flatMap(toBigrams);
+  const runs = [quotedText, question.replace(CJK_FUNCTION_WORDS, ' ')]
+    .flatMap((text) => text.toLowerCase().match(UNSPACED_SCRIPT_RUN) ?? [])
+    .map(toBigrams);
+  // Most Chinese words are two characters, so the bigrams at even offsets go first: a long run
+  // ("第三季度预算会议") keeps 第三, 季度, 预算 and 会议 within the cap, ahead of those straddling them.
+  const bigrams = [0, 1].flatMap((offset) =>
+    runs.flatMap((run) => run.filter((_, index) => index % 2 === offset)),
+  );
   return [...new Set([...words, ...bigrams])].slice(0, MAX_SEARCH_TERMS);
 };
 
@@ -400,12 +502,13 @@ export interface ChatQuery {
   scope: ChatTimeScope | null;
 }
 
-// Weeks start on Monday, the ISO week, whatever the device's locale. "Recent" is the last 7 days,
-// today included. Each period runs from a local midnight.
+// Weeks start on Monday, the ISO week, whatever the device's locale. "Recent", "the past week" and
+// "the last few days" are the last 7 days, today included. Each period runs from a local midnight.
 const toTimeScope = (phrase: string, now: Date, meetingsOnly: boolean): ChatTimeScope => {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = shiftLocalDay(today, 1);
   const monday = shiftLocalDay(today, -((today.getDay() + 6) % 7));
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const scope = (start: Date, end: Date, label: string): ChatTimeScope => ({
     start,
     end,
@@ -414,13 +517,11 @@ const toTimeScope = (phrase: string, now: Date, meetingsOnly: boolean): ChatTime
     soft: SOFT_PERIOD.test(phrase),
   });
   // "Last weeks meetings" drops the apostrophe.
-  switch (
-    phrase
-      .toLowerCase()
-      .replace(/\s+/g, ' ')
-      .replace(/weeks$/, 'week')
-  ) {
+  switch (phrase.toLowerCase().replace(/\s+/g, ' ').replace(/s$/, '')) {
     case 'today':
+    case 'this morning':
+    case 'this afternoon':
+    case 'this evening':
       return scope(today, tomorrow, 'today');
     case 'yesterday':
       return scope(shiftLocalDay(today, -1), today, 'yesterday');
@@ -428,6 +529,14 @@ const toTimeScope = (phrase: string, now: Date, meetingsOnly: boolean): ChatTime
       return scope(monday, tomorrow, 'this week');
     case 'last week':
       return scope(shiftLocalDay(monday, -7), monday, 'last week');
+    case 'this month':
+      return scope(firstOfMonth, tomorrow, 'this month');
+    case 'last month':
+      return scope(
+        new Date(today.getFullYear(), today.getMonth() - 1, 1),
+        firstOfMonth,
+        'last month',
+      );
     default:
       return scope(shiftLocalDay(today, -6), tomorrow, 'the last 7 days');
   }
@@ -522,7 +631,9 @@ const formatCalendarSection = (calendar: ChatCalendar, now: Date): string => {
   if (calendar === 'unavailable') return 'Calendar unavailable right now.';
 
   const windowEnd = now.getTime() + CALENDAR_WINDOW_MS;
+  // A declined invite isn't on the user's schedule.
   const lines = calendar
+    .filter((event) => !isDeclinedByUser(event))
     .map((event) => toCalendarEntry(event, now, windowEnd))
     .filter((entry): entry is CalendarEntry => entry !== null)
     .sort((a, b) => a.sortTime - b.sortTime)
@@ -542,20 +653,22 @@ const formatNoteText = (note: Note): string => {
     .join('\n\n');
 };
 
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const NUMBER_TERM = /^\p{N}+(?:[.,:]\p{N}+)*$/u;
-const LATIN_TERM = /^[\p{Script=Latin}\p{N}]+$/u;
-
 // Finds a term in a transcript line as the note search does: a number whole, a short Latin word
-// whole, a longer one at the start of a word, and other scripts anywhere.
+// whole, a longer one at the start of a word, and other scripts anywhere. Numbers and short words
+// take the same ASCII boundaries as the search's GLOBs, so "v.10" holds "10" for both.
 const toTermPattern = (term: string): RegExp => {
   const escaped = escapeRegExp(term);
   if (NUMBER_TERM.test(term)) {
-    return new RegExp(`(?:^|[^\\p{L}\\p{N}.:,])${escaped}(?![\\p{L}\\p{N}]|[.:,]\\p{N})`, 'iu');
+    return new RegExp(
+      `(?:^|[^A-Za-z0-9.:,]|(?:^|[^0-9])[.:,])${escaped}(?![A-Za-z0-9]|[.:,][0-9])`,
+      'i',
+    );
   }
-  if (!LATIN_TERM.test(term)) return new RegExp(escaped, 'iu');
-  const end = term.length <= 2 ? '(?![\\p{L}\\p{N}])' : '';
-  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}${end}`, 'iu');
+  if (WHOLE_WORD_TERM.test(term)) {
+    return new RegExp(`(?:^|[^A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'i');
+  }
+  if (!LATIN_WORD_TERM.test(term)) return new RegExp(escaped, 'iu');
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}`, 'iu');
 };
 
 // A long line keeps its timestamp and speaker, and the stretch around the match.
@@ -606,10 +719,17 @@ const findTranscriptPassages = (transcript: string, terms: string[]): string => 
 };
 
 // A meeting whose summary never ran is sent as its transcript, cut as the note's own chat cuts
-// one: its start and its end. Otherwise the AI summary leads, so a long note loses the end of its
+// one: its start and its end, after the lines matching the question. Otherwise the AI summary leads, so a long note loses the end of its
 // own text rather than the summary, and the transcript lines matching the question always fit.
 const formatNoteBody = (note: Note, transcript: string | undefined, terms: string[]): string => {
-  if (lacksNoteText(note)) return boundChatContext(transcript ?? '', CHAT_NOTE_CHAR_CAP).text;
+  if (lacksNoteText(note)) {
+    const whole = boundChatContext(transcript ?? '', CHAT_NOTE_CHAR_CAP);
+    const passages = whole.truncated ? findTranscriptPassages(transcript ?? '', terms) : '';
+    if (!passages) return whole.text;
+    const passagesBlock = `${PASSAGES_HEADING}\n${passages}`;
+    const room = CHAT_NOTE_CHAR_CAP - passagesBlock.length - 2;
+    return `${passagesBlock}\n\n${boundChatContext(transcript ?? '', room).text}`;
+  }
   const passages = transcript ? findTranscriptPassages(transcript, terms) : '';
   if (!passages) return formatNoteText(note).slice(0, CHAT_NOTE_CHAR_CAP);
 
@@ -668,10 +788,11 @@ const formatNotesSection = (
       included = `${body.slice(0, remaining - NOTE_CUT_MARKER.length).trimEnd()}${NOTE_CUT_MARKER}`;
     }
 
+    const title = note.title.trim() || 'Untitled';
     blocks.push(
-      `### ${withoutFenceTags(note.title)}${formatNoteDate(note, period !== undefined)}\n${included}`,
+      `### ${withoutFenceTags(title)}${formatNoteDate(note, period !== undefined)}\n${included}`,
     );
-    sources.push({ noteId: note.id, title: note.title });
+    sources.push({ noteId: note.id, title });
     remaining -= included.length;
   }
 

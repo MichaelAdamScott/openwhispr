@@ -113,7 +113,7 @@ beforeEach(() => {
     conversations: [],
     pending: null,
     failures: {},
-    sendBlockedByWipe: false,
+    sendBlocked: false,
     send: mockSend,
   });
   mockUser = null;
@@ -164,9 +164,13 @@ describe('ChatHomeScreen', () => {
     const at = (hours: number, minutes = 0): string =>
       new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes).toISOString();
     jest.useFakeTimers({ now: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9) });
+    const attendeesJson = JSON.stringify([
+      { email: 'me@example.com', self: true },
+      { email: 'sam@example.com' },
+    ]);
     mockEvents = [
-      { id: 1, summary: 'Standup', startAt: at(8, 30), endAt: at(9, 30) },
-      { id: 2, summary: 'Design review', startAt: at(14), endAt: at(15) },
+      { id: 1, summary: 'Standup', startAt: at(8, 30), endAt: at(9, 30), attendeesJson },
+      { id: 2, summary: 'Design review', startAt: at(14), endAt: at(15), attendeesJson },
     ];
     const screen = await renderHome();
 
@@ -212,7 +216,7 @@ describe('ChatHomeScreen', () => {
 
   it('keeps the question and says so when a failed chat wipe refuses the send', async () => {
     mockSend.mockImplementationOnce(() => {
-      useChatStore.setState({ sendBlockedByWipe: true });
+      useChatStore.setState({ sendBlocked: true });
       return null;
     });
     const announce = jest
@@ -250,7 +254,7 @@ describe('ChatHomeScreen', () => {
     expect(mockVoice.cancel).toHaveBeenCalledTimes(1);
   });
 
-  it('locks the composer with no Stop while a chat is working, and links to it', async () => {
+  it('locks sending with no Stop while a chat is working, and links to it', async () => {
     const screen = await renderHome();
     act(() => {
       useChatStore.setState({
@@ -262,7 +266,7 @@ describe('ChatHomeScreen', () => {
     });
 
     expect(screen.queryByLabelText('Stop')).toBeNull();
-    expect(screen.getByPlaceholderText(COMPOSER).props.editable).toBe(false);
+    expect(screen.getByPlaceholderText(COMPOSER).props.editable).toBe(true);
     fireEvent.press(screen.getByLabelText('Working on “Pricing decisions”…'));
     expect(router.push).toHaveBeenCalledWith('/(tabs)/(chat)/c4');
   });

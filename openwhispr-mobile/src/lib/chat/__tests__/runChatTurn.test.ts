@@ -6,7 +6,7 @@ import type {
   Note,
 } from '@/data';
 import { LocalReasoningError } from '@/lib/localReasoning';
-import { ChatNotesReadError, toChatErrorMessage } from '../chatErrorMessage';
+import { ChatEmptyAnswerError, ChatNotesReadError, toChatErrorMessage } from '../chatErrorMessage';
 import {
   createDefaultChatTurnDeps,
   runChatTurn,
@@ -294,6 +294,14 @@ describe('runChatTurn', () => {
     const result = await runChatTurn(makeInput(), makeDeps({ chat }));
 
     expect(result.sources.map((source) => source.cited)).toEqual([false, false]);
+  });
+
+  it('fails a turn whose answer is empty, so it can be retried', async () => {
+    const chat = jest.fn(async () => ({ text: '  ', model: 'test' }));
+
+    await expect(runChatTurn(makeInput(), makeDeps({ chat }))).rejects.toBeInstanceOf(
+      ChatEmptyAnswerError,
+    );
   });
 
   it('sends no notes when nothing matches', async () => {

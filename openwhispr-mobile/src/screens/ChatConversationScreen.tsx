@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Keyboard,
@@ -39,6 +39,7 @@ import {
 } from '@/lib/chat/chatRoutes';
 import type { ChatConversationSummary, ChatMessage } from '@/lib/chat/types';
 import { useChatStore } from '@/store/useChatStore';
+import { useNotesStore } from '@/store/useNotesStore';
 import { useProcessingModeStore } from '@/store/useProcessingModeStore';
 
 // How close to the end counts as reading the latest message, so new content keeps it in view.
@@ -73,6 +74,26 @@ export function ChatConversationScreen(): React.JSX.Element {
   if (openMessages) keptRowsRef.current = openMessages;
   else if (!listed) keptRowsRef.current = [];
   const messages = keptRowsRef.current;
+  // Every note write reloads the notes list, so it's the signal to look for source notes deleted
+  // since their answer was saved. Each note is looked up once for the whole chat, and an unchanged
+  // result keeps its identity, so the answers don't redraw.
+  const notesRevision = useNotesStore((s) => s.notes);
+  const missingRef = useRef<ReadonlySet<number>>(new Set());
+  const missingNoteIds = useMemo(() => {
+    const { getNoteById } = useNotesStore.getState();
+    const sourceIds = new Set(
+      messages.flatMap((message) =>
+        message.sources.filter((source) => source.cited !== false).map((source) => source.noteId),
+      ),
+    );
+    const missing = new Set([...sourceIds].filter((noteId) => getNoteById(noteId) === null));
+    const previous = missingRef.current;
+    if (missing.size !== previous.size || [...missing].some((noteId) => !previous.has(noteId))) {
+      missingRef.current = missing;
+    }
+    return missingRef.current;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, notesRevision]);
   const pending = useChatStore((s) => s.pending);
   const failureHere = useChatStore((s) =>
     conversationId ? s.failures[conversationId] : undefined,
@@ -81,7 +102,7 @@ export function ChatConversationScreen(): React.JSX.Element {
     (s) => s.conversations.find((conversation) => conversation.id === conversationId)?.title,
   );
   const pendingTitle = useChatStore(selectPendingTitle);
-  const sendBlocked = useChatStore((s) => s.sendBlockedByWipe);
+  const sendBlocked = useChatStore((s) => s.sendBlocked);
   const activeMode = useProcessingModeStore((s) => s.activeMode);
   const { chatEnabled, gate } = useChatSendGate();
   const gateTranscription = useCloudTranscriptionGate();
@@ -232,11 +253,11 @@ export function ChatConversationScreen(): React.JSX.Element {
     inputRef.current?.focus();
   };
 
-  const openNote = (noteId: number): void => {
+  const openNote = useCallback((noteId: number): void => {
     // Leaving mid-question would drop what's being said.
     if (voiceRef.current.state !== 'idle') return;
     router.push(chatNoteRoute(noteId));
-  };
+  }, []);
 
   // A turn in another chat locks this composer without offering to stop it.
   const workingId = pending?.conversationId ?? null;
@@ -288,7 +309,12 @@ export function ChatConversationScreen(): React.JSX.Element {
           message.role === 'user' ? (
             <ChatUserBubble key={message.id} text={message.text} />
           ) : (
-            <ChatAssistantMessage key={message.id} message={message} onOpenNote={openNote} />
+            <ChatAssistantMessage
+              key={message.id}
+              message={message}
+              onOpenNote={openNote}
+              missingNoteIds={missingNoteIds}
+            />
           ),
         )}
         {pendingHere?.phase === 'transcribing' ? (

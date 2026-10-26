@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert } from 'react-native';
 import type { AudioRecorder } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAudioRecording } from '@/hooks/useAudioRecording';
 import { useUsageLimitRecovery } from '@/hooks/useUsageLimitRecovery';
 import { isChatEnabled } from '@/lib/dictationAgent';
@@ -62,6 +63,15 @@ const currentGateRoute = (): string => {
   }`;
 };
 
+// A released recorder throws on any read.
+const readRecorder = <T>(read: () => T, fallback: T): T => {
+  try {
+    return read();
+  } catch {
+    return fallback;
+  }
+};
+
 const refreshCloudUsage = (): void => {
   if (useProcessingModeStore.getState().activeMode === 'cloud') {
     useUsageStore.getState().load(true);
@@ -96,6 +106,10 @@ export function useChatVoiceInput({
   // dropped unseen.
   const questionGenerationRef = useRef(0);
   const slotRef = useRef<TranscribingSlot | null>(null);
+  // The file a question is being spoken into, until it is cancelled or handed off to be
+  // transcribed. A screen that unmounts mid-question releases the recorder before its own cleanup
+  // can cancel it, and a released recorder can't be asked for its file, so it is kept here.
+  const listeningUriRef = useRef<string | null>(null);
   const { handleUsageLimitReached } = useUsageLimitRecovery();
 
   // The slot is ours only while it is the exact pending entry we created: a cancel, delete,
@@ -121,11 +135,38 @@ export function useChatVoiceInput({
     return true;
   };
 
+  // The slot is let go before the store hears of it, so the subscription below never takes our own
+  // release for a delete or sign-out.
   const releaseSlot = (): void => {
-    if (ownsSlot()) useChatStore.getState().endTranscribing();
+    const owned = ownsSlot();
     slotRef.current = null;
+    if (owned) useChatStore.getState().endTranscribing();
     setIsTranscribing(false);
   };
+
+  // A delete, a sign-out or a Stop clears the store's entry under a question still transcribing. It
+  // is stopped then too, so no retry, alert or Cloud prompt follows for a chat that has gone.
+  useEffect(
+    () =>
+      useChatStore.subscribe((state) => {
+        const slot = slotRef.current;
+        if (!slot || slot.generation !== generationRef.current || state.pending === slot.pending) {
+          return;
+        }
+        generationRef.current += 1;
+        slotRef.current = null;
+        setIsTranscribing(false);
+      }),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      const uri = listeningUriRef.current;
+      if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
+    },
+    [],
+  );
 
   const isStopped = (): boolean => questionGenerationRef.current !== generationRef.current;
 
@@ -149,7 +190,7 @@ export function useChatVoiceInput({
       allowCloudFallback: allowCloudFallbackRef.current,
     });
     if (result) onSentRef.current?.(result.conversationId);
-    else if (useChatStore.getState().sendBlockedByWipe) onNotSentRef.current(text);
+    else if (useChatStore.getState().sendBlocked) onNotSentRef.current(text);
   };
 
   const recording = useAudioRecording({
@@ -230,9 +271,15 @@ export function useChatVoiceInput({
 
   const start = async (allowCloudFallback: boolean): Promise<boolean> => {
     // A cancelled transcription still delivers its text later, which must not land in a new slot.
+    // The send gate awaits paywalls first, so a second tap can arrive here after the first opened
+    // the mic, and a tap from a screen left meanwhile would open the mic, or ask for it, unseen. The
+    // recorder itself is asked, since this render's copy of its state may be stale.
     if (
       startingRef.current ||
+      listeningUriRef.current !== null ||
+      !isFocusedRef.current() ||
       useChatStore.getState().pending ||
+      readRecorder(() => recording.audioRecorder.isRecording, false) ||
       recording.isRecording ||
       recording.isProcessing
     ) {
@@ -252,8 +299,10 @@ export function useChatVoiceInput({
     } finally {
       startingRef.current = false;
     }
+    listeningUriRef.current = readRecorder(() => recording.audioRecorder.uri ?? null, null);
     // The screen was left while the recorder started, so nobody would see it listening.
     if (!isFocusedRef.current()) {
+      listeningUriRef.current = null;
       // start promises a boolean, and a mic that won't close has nothing left to report.
       await recording.cancelRecording().catch(() => undefined);
       return false;
@@ -264,6 +313,8 @@ export function useChatVoiceInput({
   const finish = async (): Promise<void> => {
     // A slot means a finish is already stopping the recorder.
     if (slotRef.current || state !== 'listening') return;
+    // The recording is the transcription's, or the cancel's below, to clean up from here.
+    listeningUriRef.current = null;
     if (!takeSlot()) {
       // Another turn took the slot while this question was spoken, so it's dropped; the tap says so.
       safeHaptics('light');
@@ -285,6 +336,7 @@ export function useChatVoiceInput({
   };
 
   const cancel = async (): Promise<void> => {
+    listeningUriRef.current = null;
     if (slotRef.current) {
       // Covers the native stop window too, when the recorder still reports recording.
       releaseSlot();

@@ -55,6 +55,15 @@ describe('ReasoningService.chat', () => {
     expect(processProviderText).not.toHaveBeenCalled();
   });
 
+  it('never answers a chat with its own prompt when Cloud returns no text', async () => {
+    jest.mocked(getInferenceSelection).mockReturnValue({ mode: 'openwhispr' });
+    jest.mocked(api.post).mockResolvedValue({ text: '', model: 'cloud' });
+
+    await expect(
+      ReasoningService.chat({ systemPrompt: 's', text: 'NOTES: private plans' }),
+    ).resolves.toMatchObject({ text: '' });
+  });
+
   it('routes chat through processText for providers and local', async () => {
     jest.mocked(getInferenceSelection).mockReturnValue(route);
     await expect(

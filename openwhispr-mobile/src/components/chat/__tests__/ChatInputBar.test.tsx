@@ -155,7 +155,7 @@ describe('ChatInputBar', () => {
     );
     expect(screen.queryByLabelText('Stop')).toBeNull();
     expect(screen.getByText('Working on “Pricing”…')).toBeTruthy();
-    expect(screen.getByPlaceholderText('Reply').props.editable).toBe(false);
+    expect(screen.getByPlaceholderText('Reply').props.editable).toBe(true);
   });
 
   it('starts voice through onMicPress, with a light haptic when it is refused', async () => {

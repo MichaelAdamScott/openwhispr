@@ -84,6 +84,10 @@ const ACME_SYNC = {
   startAt: new Date(2026, 9, 22, 15, 15).toISOString(),
   endAt: new Date(2026, 9, 22, 15, 45).toISOString(),
   allDay: 0,
+  attendeesJson: JSON.stringify([
+    { email: 'me@example.com', self: true },
+    { email: 'dana@acme.com', responseStatus: 'accepted' },
+  ]),
 } as GoogleCalendarEvent;
 
 const chip = (label: string, events: GoogleCalendarEvent[] = [ACME_SYNC]): string => {

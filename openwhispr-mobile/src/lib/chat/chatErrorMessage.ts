@@ -16,6 +16,11 @@ export const CHAT_GUARDRAIL_MESSAGE =
 export const CHAT_OUTPUT_LIMIT_MESSAGE =
   'The answer was too long for on-device AI. Try a narrower question.';
 export const CHAT_NOTES_READ_ERROR_MESSAGE = 'Couldn’t read your notes. Try again.';
+export const CHAT_EMPTY_ANSWER_MESSAGE = 'The answer came back empty. Try again.';
+export const CHAT_SESSION_EXPIRED_MESSAGE = 'Your session expired. Sign in again to keep chatting.';
+export const CHAT_RATE_LIMITED_MESSAGE = 'You’ve reached a usage limit. Try again later.';
+export const CHAT_SERVER_ERROR_MESSAGE = 'OpenWhispr couldn’t answer right now. Try again.';
+export const CHAT_REQUEST_FAILED_MESSAGE = 'OpenWhispr couldn’t take this question. Try again.';
 
 const ORGANIZATION_POLICY_PREFIX = 'Your organization';
 
@@ -29,6 +34,30 @@ export class ChatNotesReadError extends Error {
     this.cause = cause;
   }
 }
+
+/** The model answered with nothing to show (only its thinking, say), so the turn can be retried. */
+export class ChatEmptyAnswerError extends Error {
+  constructor() {
+    super('Chat answer was empty');
+    this.name = 'ChatEmptyAnswerError';
+  }
+}
+
+// Read by shape rather than instanceof, so this module doesn't pull the API client, and with it
+// the auth store, into everything that words a chat error.
+const apiErrorStatus = (error: unknown): number | null => {
+  if (!(error instanceof Error) || error.name !== 'ApiError') return null;
+  const { status } = error as Error & { status?: unknown };
+  return typeof status === 'number' ? status : null;
+};
+
+// The server answered, so the connection is fine: what went wrong is said instead.
+const toApiErrorMessage = (status: number): string => {
+  if (status === 401) return CHAT_SESSION_EXPIRED_MESSAGE;
+  if (status === 429) return CHAT_RATE_LIMITED_MESSAGE;
+  if (status >= 500) return CHAT_SERVER_ERROR_MESSAGE;
+  return CHAT_REQUEST_FAILED_MESSAGE;
+};
 
 export interface ChatErrorMessageOptions {
   surface?: 'chat' | 'noteChat';
@@ -48,7 +77,7 @@ const toLocalReasoningMessage = (error: LocalReasoningError): string => {
 
 // Provider and network errors carry raw text that means nothing to the user, so only the cases
 // with something to act on get their own copy; timeouts, fetch failures and the rest read as a
-// connection problem.
+// connection problem. A Cloud error status gets copy of its own, never the server's text.
 export const toChatErrorMessage = (
   error: unknown,
   { surface = 'chat' }: ChatErrorMessageOptions = {},
@@ -58,10 +87,13 @@ export const toChatErrorMessage = (
   }
   if (error instanceof LocalReasoningError) return toLocalReasoningMessage(error);
   if (error instanceof ChatNotesReadError) return CHAT_NOTES_READ_ERROR_MESSAGE;
+  if (error instanceof ChatEmptyAnswerError) return CHAT_EMPTY_ANSWER_MESSAGE;
   if (error instanceof Error && error.message.startsWith(ORGANIZATION_POLICY_PREFIX)) {
     return error.message;
   }
   if (error instanceof Error && error.message === UPGRADE_REQUIRED_MESSAGE) return error.message;
+  const status = apiErrorStatus(error);
+  if (status !== null) return toApiErrorMessage(status);
   // Route refusals and provider rejections are marked as not worth retrying, and their messages
   // say what to fix (a missing key, an unsupported model).
   if (

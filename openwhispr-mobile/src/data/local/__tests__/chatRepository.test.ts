@@ -64,6 +64,31 @@ describe('LocalChatRepository', () => {
     ]);
   });
 
+  it('drops single-marker emphasis but keeps underscores and asterisks inside words', () => {
+    const { repo } = createMemoryChatRepository();
+    const a = repo.createConversation('A');
+    repo.appendMessage({
+      conversationId: a.id,
+      role: 'assistant',
+      text: 'The plan is *final* and _signed_, see snake_case and 2*3*4.',
+    });
+
+    expect(repo.listConversations()[0].preview).toBe(
+      'The plan is final and signed, see snake_case and 2*3*4.',
+    );
+  });
+
+  it('keeps messages in the order they were saved when the clock moves back', () => {
+    const { repo } = createMemoryChatRepository();
+    const a = repo.createConversation('A');
+    repo.appendMessage({ conversationId: a.id, role: 'user', text: 'question' });
+    now -= 60_000;
+    repo.appendMessage({ conversationId: a.id, role: 'assistant', text: 'answer' });
+
+    expect(repo.getMessages(a.id).map((message) => message.text)).toEqual(['question', 'answer']);
+    expect(repo.listConversations()[0].preview).toBe('answer');
+  });
+
   it('cuts the preview to 120 characters and honors the limit', () => {
     const { repo } = createMemoryChatRepository();
     const a = repo.createConversation('A');

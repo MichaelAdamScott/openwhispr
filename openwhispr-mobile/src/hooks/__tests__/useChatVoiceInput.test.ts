@@ -50,6 +50,17 @@ const mockStopRecording = jest.fn(async () => {
   mockIsRecording = false;
   await mockStopBehavior();
 });
+const mockDeleteAsync = jest.fn(async (_uri: string, _options: object) => undefined);
+jest.mock('expo-file-system/legacy', () => ({
+  deleteAsync: (uri: string, options: object) => mockDeleteAsync(uri, options),
+}));
+// The native recorder answers for itself, whatever a render last saw.
+const mockAudioRecorder = {
+  get isRecording(): boolean {
+    return mockIsRecording;
+  },
+  uri: 'file:///question.m4a',
+};
 jest.mock('@/hooks/useAudioRecording', () => ({
   useAudioRecording: (options: UseAudioRecordingOptions) => {
     mockRecordingOptions = options;
@@ -59,7 +70,7 @@ jest.mock('@/hooks/useAudioRecording', () => ({
       startRecording: mockStartRecording,
       stopRecording: mockStopRecording,
       cancelRecording: mockCancelRecording,
-      audioRecorder: {},
+      audioRecorder: mockAudioRecorder,
     };
   },
 }));
@@ -110,6 +121,83 @@ beforeEach(() => {
   mockSend.mockReturnValue({ conversationId: 'conv-1', done: Promise.resolve() });
   useChatStore.setState({ send: mockSend });
   jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+});
+
+it('deletes the file of a question still being spoken when the screen goes', async () => {
+  const { result, unmount } = renderVoiceInput('conv-1');
+  await act(async () => {
+    await result.current.start(true);
+  });
+
+  unmount();
+
+  expect(mockDeleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
+});
+
+it('leaves a question handed off to transcription for it to clean up', async () => {
+  const { result, rerender, unmount } = renderVoiceInput('conv-1');
+  await act(async () => {
+    await result.current.start(true);
+  });
+  rerender({});
+  await act(async () => {
+    await result.current.finish();
+  });
+
+  unmount();
+
+  expect(mockDeleteAsync).not.toHaveBeenCalled();
+});
+
+it('opens no mic for a screen left before the gate let the tap through', async () => {
+  mockFocused = false;
+  const { result } = renderVoiceInput('conv-1');
+
+  let started = true;
+  await act(async () => {
+    started = await result.current.start(true);
+  });
+
+  expect(started).toBe(false);
+  expect(mockStartRecording).not.toHaveBeenCalled();
+});
+
+it('refuses a second tap the gate lets through after the first opened the mic', async () => {
+  const { result } = renderVoiceInput('conv-1');
+  // Both taps hold the render from before the mic opened.
+  const { start } = result.current;
+
+  await act(async () => {
+    await start(true);
+  });
+  let second = true;
+  await act(async () => {
+    second = await start(true);
+  });
+
+  expect(second).toBe(false);
+  expect(mockStartRecording).toHaveBeenCalledTimes(1);
+});
+
+it('stops a question whose chat goes while it transcribes, with no alert after', async () => {
+  mockStopBehavior = async () => {
+    // A delete or sign-out clears the store's entry under the transcription.
+    useChatStore.setState({ pending: null });
+    expect(mockRecordingOptions.shouldCancel?.()).toBe(true);
+    mockRecordingOptions.onError?.(new Error('Network request failed'));
+  };
+  const { result, rerender } = renderVoiceInput('conv-1');
+  await act(async () => {
+    await result.current.start(true);
+  });
+  rerender({});
+  await act(async () => {
+    await result.current.finish();
+  });
+
+  rerender({});
+  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(result.current.state).toBe('idle');
 });
 
 it('does not save the spoken question to transcript history', () => {
@@ -206,14 +294,14 @@ it('hands the transcript back when a failed chat wipe refuses the send, and only
   };
 
   mockSend.mockImplementationOnce(() => {
-    useChatStore.setState({ sendBlockedByWipe: true });
+    useChatStore.setState({ sendBlocked: true });
     return null;
   });
   await speak();
   expect(mockOnNotSent).toHaveBeenCalledWith('When is my next meeting?');
 
   mockOnNotSent.mockClear();
-  useChatStore.setState({ sendBlockedByWipe: false });
+  useChatStore.setState({ sendBlocked: false });
   mockSend.mockReturnValueOnce(null);
   await speak();
   expect(mockSend).toHaveBeenCalledTimes(2);

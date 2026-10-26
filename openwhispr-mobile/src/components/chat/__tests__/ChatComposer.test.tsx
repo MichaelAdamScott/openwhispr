@@ -93,11 +93,16 @@ describe('ChatComposer', () => {
     expect(typed.props.onSend).not.toHaveBeenCalled();
   });
 
-  it('locks the input while busy or disabled', () => {
+  it('keeps the input editable while busy, locking only sending, and locks it when disabled', () => {
     expect(renderComposer().getByPlaceholderText('Ask anything').props.editable).toBe(true);
     expect(renderComposer({ busy: true }).getByPlaceholderText('Ask anything').props.editable).toBe(
-      false,
+      true,
     );
+    expect(
+      renderComposer({ busy: true, value: 'Next question', onStop: undefined }).getByLabelText(
+        'Send',
+      ).props.accessibilityState,
+    ).toEqual({ disabled: true });
     expect(
       renderComposer({ disabled: true }).getByPlaceholderText('Ask anything').props.editable,
     ).toBe(false);

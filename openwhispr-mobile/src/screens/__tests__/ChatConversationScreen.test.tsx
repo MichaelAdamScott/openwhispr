@@ -64,11 +64,20 @@ jest.mock('@/data', () => ({
     }),
   },
 }));
-jest.mock('@/store/useNotesStore', () => ({
-  useNotesStore: (
-    selector: (state: { notes: []; getNoteById: (id: number) => object }) => unknown,
-  ) => selector({ notes: [], getNoteById: (id: number) => ({ id }) }),
-}));
+// A real store, so a deleted note re-renders the chips as the app's notes list would.
+const mockDeletedNoteIds = new Set<number>();
+jest.mock('@/store/useNotesStore', () => {
+  const { create } = require('zustand');
+  return {
+    useNotesStore: create(() => ({
+      notes: [],
+      getNoteById: (id: number) => (mockDeletedNoteIds.has(id) ? null : { id }),
+    })),
+  };
+});
+const { useNotesStore: mockNotesStore } = jest.requireMock('@/store/useNotesStore') as {
+  useNotesStore: { setState: (state: { notes: unknown[] }) => void };
+};
 jest.mock('@/lib/chat/runChatTurn', () => ({
   runChatTurn: jest.fn(async () => ({ text: 'Answer', steps: [], sources: [] })),
 }));
@@ -135,6 +144,7 @@ const mockRetry = jest.fn(async () => undefined);
 const mockEditFailedQuestion = jest.fn(() => 'What did we decide?');
 
 beforeEach(() => {
+  mockDeletedNoteIds.clear();
   mockParams = { id: 'c1' };
   mockRunFocusEffects = false;
   mockFocused = true;
@@ -152,7 +162,7 @@ beforeEach(() => {
     messages: [question],
     pending: null,
     failures: {},
-    sendBlockedByWipe: false,
+    sendBlocked: false,
     send: realSend,
     cancel: mockCancel,
     retry: mockRetry,
@@ -192,7 +202,7 @@ describe('ChatConversationScreen', () => {
     expect(mockCancel).toHaveBeenCalledTimes(1);
   });
 
-  it('locks the composer with no Stop while another chat works, and links to it', () => {
+  it('locks sending with no Stop while another chat works, and links to it', () => {
     useChatStore.setState({
       conversations: [
         { id: 'c1', title: 'Pricing decisions', preview: '', createdAt: 1, updatedAt: 1 },
@@ -203,7 +213,7 @@ describe('ChatConversationScreen', () => {
     const screen = render(<ChatConversationScreen />);
 
     expect(screen.queryByLabelText('Stop')).toBeNull();
-    expect(screen.getByPlaceholderText('Reply').props.editable).toBe(false);
+    expect(screen.getByPlaceholderText('Reply').props.editable).toBe(true);
     fireEvent.press(screen.getByLabelText('Working on “Launch plan”…'));
     expect(router.push).toHaveBeenCalledWith('/(tabs)/(chat)/c2');
     expect(mockCancel).not.toHaveBeenCalled();
@@ -382,6 +392,40 @@ describe('ChatConversationScreen', () => {
     });
     const screen = render(<ChatConversationScreen />);
     expect(screen.queryByLabelText('Retry')).toBeNull();
+  });
+
+  it('disables the chip of a note deleted since the answer, as soon as it goes', () => {
+    useChatStore.setState({
+      messages: [
+        question,
+        {
+          ...question,
+          id: 'm2',
+          role: 'assistant',
+          text: 'We kept $12.',
+          sources: [
+            { noteId: 7, title: 'Pricing call' },
+            { noteId: 8, title: 'Roadmap' },
+          ],
+        },
+      ],
+    });
+    const screen = render(<ChatConversationScreen />);
+    expect(screen.getByLabelText('Pricing call').props.accessibilityState).toEqual({
+      disabled: false,
+    });
+
+    mockDeletedNoteIds.add(7);
+    act(() => {
+      mockNotesStore.setState({ notes: [] });
+    });
+
+    const deleted = screen.getByLabelText('Pricing call, deleted');
+    expect(deleted.props.accessibilityState).toEqual({ disabled: true });
+    fireEvent.press(deleted);
+    expect(router.push).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByLabelText('Roadmap'));
+    expect(router.push).toHaveBeenCalledWith('/(tabs)/(chat)/note/8');
   });
 
   it('ignores Retry and source taps while listening', () => {
@@ -772,7 +816,7 @@ describe('ChatConversationScreen', () => {
   it('keeps the reply and says so when a failed chat wipe refuses the send', () => {
     useChatStore.setState({
       send: jest.fn(() => {
-        useChatStore.setState({ sendBlockedByWipe: true });
+        useChatStore.setState({ sendBlocked: true });
         return null;
       }),
     });
@@ -795,18 +839,18 @@ describe('ChatConversationScreen', () => {
     const screen = render(<ChatConversationScreen />);
 
     act(() => {
-      useChatStore.setState({ sendBlockedByWipe: true });
+      useChatStore.setState({ sendBlocked: true });
     });
     expect(announce).toHaveBeenCalledTimes(1);
     expect(announce).toHaveBeenCalledWith('Couldn’t send right now. Try again.');
 
     act(() => {
-      useChatStore.setState({ sendBlockedByWipe: false });
+      useChatStore.setState({ sendBlocked: false });
     });
     mockFocused = false;
     screen.rerender(<ChatConversationScreen />);
     act(() => {
-      useChatStore.setState({ sendBlockedByWipe: true });
+      useChatStore.setState({ sendBlocked: true });
     });
     expect(announce).toHaveBeenCalledTimes(1);
     announce.mockRestore();

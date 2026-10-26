@@ -15,6 +15,8 @@ interface ChatStepsProps {
   steps: ChatStep[];
   variant: 'working' | 'done';
   sourceCount?: number;
+  /** How many notes were read, cited or not; null when that can't be told. */
+  readCount?: number | null;
   /** Epoch ms when the turn began; without it "Still working" never shows. */
   startedAt?: number;
   /** Whether its screen is showing, so a covered chat stays quiet; a stable callback. */
@@ -27,15 +29,19 @@ const SLOW_AFTER_MS = 15_000;
 const STATUS_DWELL_MS = 700;
 const SLOW_LABEL = 'Still working';
 
-const sourcesLabel = (count: number): string => {
-  if (count === 0) return 'Searched your notes · no matches';
-  return `Searched your notes · ${count} ${count === 1 ? 'source' : 'sources'}`;
+// Notes read but named by none of the answer are still read, so they aren't "no matches".
+const sourcesLabel = (count: number, readCount: number | null): string => {
+  if (count > 0) return `Searched your notes · ${count} ${count === 1 ? 'source' : 'sources'}`;
+  if (readCount === null) return 'Searched your notes';
+  if (readCount === 0) return 'Searched your notes · no matches';
+  return `Searched your notes · ${readCount} read`;
 };
 
 export function ChatSteps({
   steps,
   variant,
   sourceCount = 0,
+  readCount = 0,
   startedAt,
   isFocused,
 }: ChatStepsProps): React.JSX.Element {
@@ -72,7 +78,7 @@ export function ChatSteps({
     ? SLOW_LABEL
     : working
       ? (status ?? 'Thinking…')
-      : sourcesLabel(sourceCount);
+      : sourcesLabel(sourceCount, readCount);
 
   // Announced once rather than through a live region, which Android would also read on every
   // step change and again for this.
