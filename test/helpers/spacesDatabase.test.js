@@ -2030,3 +2030,56 @@ test("a revoked team folder kept in Personal belongs to the active account", (t)
   assert.equal(relocation.folder.account_id, "test-account");
   assert.ok(relocation.relocatedNotes.every((note) => note.account_id === "test-account"));
 });
+
+test("a failing legacy-row repair never stops the database from opening", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  db.db.close();
+
+  const repair = DatabaseManager.prototype._repairCloudBoundLegacyRows;
+  DatabaseManager.prototype._repairCloudBoundLegacyRows = () => {
+    throw new Error("repair exploded");
+  };
+  t.after(() => {
+    DatabaseManager.prototype._repairCloudBoundLegacyRows = repair;
+  });
+
+  const reopened = new DatabaseManager();
+  t.after(() => reopened.db.close());
+  assert.ok(reopened.getFolders().some((folder) => folder.name === "Personal"));
+});
+
+test("launch repair gives a default to its adopter even when only another account's notes sit in it", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  const privateId = db.getPrivateSpaceId();
+  db.db
+    .prepare(
+      "UPDATE folders SET cloud_id = 'a-' || name, sync_status = 'synced' WHERE is_default = 1 AND account_id IS NULL"
+    )
+    .run();
+  pullOwnDefaults(db, "account-b");
+  const legacyMeetings = db.db
+    .prepare("SELECT id FROM folders WHERE name = 'Meetings' AND account_id IS NULL")
+    .get().id;
+  const insertNote = db.db.prepare(
+    `INSERT INTO notes (title, content, folder_id, space_id, client_note_id, cloud_id, account_id, owner_user_id, sync_status)
+     VALUES (?, '', ?, ?, ?, ?, ?, ?, 'synced')`
+  );
+  insertNote.run("A note", null, privateId, "n1", "c1", "account-a", "account-a");
+  insertNote.run("B meeting", legacyMeetings, privateId, "n2", "c2", "account-b", "account-b");
+
+  db.setActiveAccountId(null);
+  db._repairCloudBoundLegacyRows();
+
+  assert.equal(
+    db.db.prepare("SELECT account_id FROM folders WHERE id = ?").get(legacyMeetings).account_id,
+    "account-a"
+  );
+  assert.equal(
+    db.db.prepare("SELECT folder_id FROM notes WHERE title = 'B meeting'").get().folder_id,
+    db.db
+      .prepare("SELECT id FROM folders WHERE name = 'Meetings' AND account_id = 'account-b'")
+      .get().id
+  );
+});

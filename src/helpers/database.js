@@ -397,11 +397,13 @@ class DatabaseManager {
           "UPDATE folders SET account_id = ? WHERE id = ? AND account_id IS NULL"
         );
         for (const folder of boundFolders) {
-          // The accounts whose notes it holds name its owner. An empty default
-          // falls back to every account here: each signed-in account gets its
-          // own defaults from the cloud, so only the owner lacks one.
-          let evidence = notesInFolder.all(folder.id).map((row) => row.account_id);
-          if (evidence.length === 0 && folder.is_default) evidence = knownAccounts;
+          // A user folder's owner is named by the accounts whose notes it
+          // holds. A default can be anyone's: each account that syncs gets its
+          // own defaults from the cloud, so only the one that adopted this row
+          // lacks a copy, whatever notes other accounts misfiled into it.
+          const evidence = folder.is_default
+            ? knownAccounts
+            : notesInFolder.all(folder.id).map((row) => row.account_id);
           const candidates = evidence.filter(
             (accountId) => !hasOwnFolder.get(folder.space_id, folder.name, accountId)
           );
@@ -1758,7 +1760,13 @@ class DatabaseManager {
         if (!err.message.includes("duplicate column")) throw err;
       }
 
-      this._repairCloudBoundLegacyRows();
+      // A repair failure must never stop the app from launching: the rows
+      // stay as they were, and the next launch tries again.
+      try {
+        this._repairCloudBoundLegacyRows();
+      } catch (error) {
+        debugLogger.error("Legacy row account repair failed", { error: error.message }, "database");
+      }
 
       // Space vector purges owed to Qdrant while the sidecar was down/booting;
       // drained on the next semantic search activation.
