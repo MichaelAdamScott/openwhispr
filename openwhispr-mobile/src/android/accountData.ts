@@ -240,8 +240,13 @@ export async function retryAccountDataDeletion(): Promise<void> {
 }
 
 export function prepareAccountData(user: User): void {
-  selectAccountData(user);
   try {
+    // Abort old requests and drop visible messages before the database changes; saved chats
+    // stay with the account's notes and are available when that account returns.
+    const { useChatStore } =
+      require('@/store/useChatStore') as typeof import('@/store/useChatStore');
+    useChatStore.getState().reset();
+    selectAccountData(user);
     const { useNotesStore } =
       require('@/store/useNotesStore') as typeof import('@/store/useNotesStore');
     const { useDictionaryStore } =

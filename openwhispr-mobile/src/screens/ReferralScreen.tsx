@@ -34,6 +34,7 @@ const LABEL_COLOR = iosColor('label');
 const PLACEHOLDER_COLOR = iosColor('tertiaryLabel');
 
 function ReferralHeader() {
+  if (Platform.OS !== 'android') return null;
   return (
     <TabScreenHeader
       title="Referral"
@@ -106,7 +107,10 @@ function GuestReferralEmptyState() {
   return (
     <View className="flex-1 bg-systemBackground">
       <ReferralHeader />
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
         <View className="items-center px-6 pt-7">
           <View
             style={{ borderCurve: 'continuous' }}
@@ -304,7 +308,10 @@ export default function ReferralScreen() {
   return (
     <View className="flex-1 bg-systemBackground">
       <ReferralHeader />
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
         <View className="mt-2 px-4">
           <View
             style={{ borderCurve: 'continuous' }}

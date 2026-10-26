@@ -12,7 +12,7 @@ export const WORKFLOW_LABELS: Record<MobileInferenceScope, string> = {
   upload: 'Uploads',
   cleanup: 'Text Cleanup',
   notes: 'Note Formatting & Titles',
-  noteChat: 'Note Chat',
+  noteChat: 'Chat',
   agent: 'Voice Assistant',
 };
 
@@ -36,14 +36,14 @@ export const LOCAL_MODE_DICTATION_NOTES = {
   on:
     Platform.OS === 'android'
       ? 'Local Mode keeps dictation on this phone. Turn it off in Models & processing to use Cloud, or choose Bring Your Own Key.'
-      : `Local Mode is on: dictation stays on this ${deviceLabel}, notes you make stay private, and note chat asks before leaving it. Choose OpenWhispr Cloud or Bring Your Own Key to turn it off.`,
+      : `Local Mode is on: dictation stays on this ${deviceLabel}, notes you make stay private, and chat asks before leaving it. Choose OpenWhispr Cloud or Bring Your Own Key to turn it off.`,
   off:
     Platform.OS === 'android'
       ? 'On-Device turns on Local Mode: dictation stays on this phone and notes ask before leaving it.'
-      : 'On-Device turns on Local Mode: dictation stays on this iPhone, notes you make stay private, and note chat asks before leaving it.',
+      : 'On-Device turns on Local Mode: dictation stays on this iPhone, notes you make stay private, and chat asks before leaving it.',
 };
 
-// What Local Mode means for note chat.
+// What Local Mode means for chat.
 export const ON_DEVICE_MODE_NOTES: Partial<Record<MobileInferenceScope, string>> = {
   ...(Platform.OS === 'android'
     ? {
@@ -55,7 +55,10 @@ export const ON_DEVICE_MODE_NOTES: Partial<Record<MobileInferenceScope, string>>
           'In Local Mode, cleanup runs on this phone, or sends only the transcript text to your provider with Bring Your Own Key. OpenWhispr Cloud cleanup is skipped until Local Mode is off.',
       }
     : {}),
-  noteChat: `In Local Mode note chat asks before sending a note off this ${deviceLabel}.`,
+  noteChat:
+    Platform.OS === 'android'
+      ? 'In Local Mode note chat asks before sending a note off this phone.'
+      : 'In Local Mode chat asks before sending notes off this iPhone.',
 };
 
 export const PRIVATE_MODE_LOCKED_REASON =

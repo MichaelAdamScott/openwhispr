@@ -13,6 +13,7 @@ import { NotesTopBar } from '@/components/notes/NotesTopBar';
 import { GroupedList } from '@/components/notes/GroupedList';
 import { FolderRow } from '@/components/notes/FolderRow';
 import { NoteRow } from '@/components/notes/NoteRow';
+import type { RestoreRow } from '@/components/ui/SwipeableCard';
 import { SectionHeader } from '@/components/notes/SectionHeader';
 import { NewFolderSheet } from '@/components/notes/NewFolderSheet';
 import { SpacesSection } from '@/components/notes/SpacesSection';
@@ -108,7 +109,7 @@ export default function FoldersScreen() {
   );
 
   const handleDeleteNote = useCallback(
-    (id: number) => {
+    (id: number, restoreRow?: RestoreRow) => {
       confirmDestructive(
         copy('library.deleteNote', 'Delete Note'),
         copy('library.deleteNoteBody', 'This note will be deleted permanently.'),
@@ -116,7 +117,11 @@ export default function FoldersScreen() {
           safeHaptics('warning');
           deleteNote(id);
         },
-        { cancelLabel: copy('cancel', 'Cancel'), destructiveLabel: copy('deleteAction', 'Delete') },
+        {
+          cancelLabel: copy('cancel', 'Cancel'),
+          destructiveLabel: copy('deleteAction', 'Delete'),
+          onCancel: restoreRow,
+        },
       );
     },
     [deleteNote, copy],
@@ -253,7 +258,7 @@ export default function FoldersScreen() {
                       bucket={bucket.key}
                       tinted
                       onPress={() => handleNotePress(note.id)}
-                      onDelete={() => handleDeleteNote(note.id)}
+                      onDelete={(restoreRow) => handleDeleteNote(note.id, restoreRow)}
                     />
                   ))}
                 </GroupedList>

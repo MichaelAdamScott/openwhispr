@@ -20,6 +20,7 @@ import { NotesTopBar } from '@/components/notes/NotesTopBar';
 import { GroupedList } from '@/components/notes/GroupedList';
 import { FolderRow } from '@/components/notes/FolderRow';
 import { NoteRow } from '@/components/notes/NoteRow';
+import type { RestoreRow } from '@/components/ui/SwipeableCard';
 import { SectionHeader } from '@/components/notes/SectionHeader';
 import { MoveToFolderSheet } from '@/components/notes/MoveToFolderSheet';
 import { NewFolderSheet } from '@/components/notes/NewFolderSheet';
@@ -134,7 +135,7 @@ export default function NotesListScreen() {
   );
 
   const handleDeleteNote = useCallback(
-    (id: number) => {
+    (id: number, restoreRow?: RestoreRow) => {
       confirmDestructive(
         copy('library.deleteNote', 'Delete Note'),
         copy('library.deleteNoteBody', 'This note will be deleted permanently.'),
@@ -142,7 +143,11 @@ export default function NotesListScreen() {
           safeHaptics('warning');
           deleteNote(id);
         },
-        { cancelLabel: copy('cancel', 'Cancel'), destructiveLabel: copy('deleteAction', 'Delete') },
+        {
+          cancelLabel: copy('cancel', 'Cancel'),
+          destructiveLabel: copy('deleteAction', 'Delete'),
+          onCancel: restoreRow,
+        },
       );
     },
     [deleteNote, copy],
@@ -441,7 +446,7 @@ export default function NotesListScreen() {
                     bucket={bucket.key}
                     onPress={() => handleNotePress(note.id)}
                     onLongPress={() => move.open(note.id)}
-                    onDelete={() => handleDeleteNote(note.id)}
+                    onDelete={(restoreRow) => handleDeleteNote(note.id, restoreRow)}
                     onMove={() => move.open(note.id)}
                   />
                 ))}

@@ -55,6 +55,10 @@ export default function AccountLayout() {
       <Stack.Screen name="index" options={customHeaderStackOptions} />
       <Stack.Screen name="profile" options={{ title: 'Profile', headerLargeTitle: false }} />
       <Stack.Screen
+        name="referral"
+        options={{ title: 'Referral', headerLargeTitle: false, ...androidPageHeader }}
+      />
+      <Stack.Screen
         name="ai-models"
         options={{ title: 'AI Models', headerLargeTitle: false, ...androidPageHeader }}
       />

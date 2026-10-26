@@ -21,6 +21,7 @@ import { Sentry } from '@/lib/sentry';
 import { useUsageStore } from '@/store/useUsageStore';
 import { clearAllSessions as clearAgentSessions } from '@/services/agent/AgentComposerService';
 import { claimNoteShareTokens, clearNoteShareTokens } from '@/lib/notes/noteShareTokens';
+import { withChatHistory } from '@/lib/chat/withChatHistory';
 
 const GUEST_SESSION_KEY = 'openwhispr_guest_session';
 
@@ -205,10 +206,17 @@ export const useAuthStore = create<AuthStore>((set) => ({
   signOut: async () => {
     set({ isLoading: true });
     await anonymousSignInInFlight?.catch(() => undefined);
+    // Chats go the way of the notes they quote: a guest or anonymous session keeps its notes for a
+    // later sign-up to claim (see initSyncTriggers), so it keeps its chats too.
+    const { user } = useAuthStore.getState();
+    const realAccount = user !== null && !user.isAnonymous;
     await signOutApi();
     await SecureStore.deleteItemAsync(GUEST_SESSION_KEY);
     useUsageStore.getState().reset();
     clearAgentSessions();
+    if (Platform.OS !== 'android') {
+      withChatHistory((chats) => (realAccount ? chats.clearChatHistory() : chats.stopChatTurn()));
+    }
     try {
       prepareLocalData(null);
     } finally {
@@ -248,6 +256,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       prepareLocalData(null);
       useUsageStore.getState().reset();
       clearAgentSessions();
+      if (Platform.OS !== 'android') withChatHistory((chats) => chats.clearChatHistory());
       set({ user: null, sessionCookie: null, isGuest: false, isLoading: false });
     } catch (error) {
       set({ isLoading: false, error: error instanceof Error ? error.message : 'Delete failed' });

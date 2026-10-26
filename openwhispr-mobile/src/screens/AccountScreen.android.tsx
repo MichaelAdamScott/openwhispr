@@ -55,7 +55,11 @@ export default function AndroidAccount() {
         />
       </Section>
       <Section title="OpenWhispr">
-        <Row icon="Gift" title={t('referrals')} onPress={() => router.push('/(tabs)/(referral)')} />
+        <Row
+          icon="Gift"
+          title={t('referrals')}
+          onPress={() => router.push('/(account)/referral')}
+        />
         <Row
           icon="CircleHelp"
           title={t('helpAbout')}

@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 const mockFiles = new Map<string, InstanceType<typeof Database>>();
 const mockDeleteAudio = jest.fn().mockResolvedValue(undefined);
 const mockReadAudio = jest.fn().mockResolvedValue(['meeting-81.wav']);
+const mockRunChatTurn = jest.fn();
 let mockSessionUser: { id: string; email: string; isAnonymous?: boolean } | null = null;
 let mockSessionFailure: Error | null = null;
 
@@ -82,6 +83,9 @@ jest.mock('@/services/providers/ProviderCredentials', () => ({
   clearProviderCredentials: async () => {},
 }));
 jest.mock('@/services/agent/AgentComposerService', () => ({ clearAllSessions: jest.fn() }));
+jest.mock('@/lib/chat/runChatTurn', () => ({
+  runChatTurn: (...args: unknown[]) => mockRunChatTurn(...args),
+}));
 jest.mock('@/store/useUsageStore', () => ({
   useUsageStore: { getState: () => ({ reset: jest.fn() }) },
 }));
@@ -109,6 +113,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockDeleteAudio.mockReset().mockResolvedValue(undefined);
   mockReadAudio.mockReset().mockResolvedValue(['meeting-81.wav']);
+  mockRunChatTurn.mockReset();
   mockFiles.clear();
   mockSessionUser = { id: 'account-a', email: 'a@example.invalid' };
   mockSessionFailure = null;
@@ -161,6 +166,88 @@ it('keeps the original local collection separate from both signed-in accounts', 
     await useAuthStore.getState().signOut();
     expect(notesRepository.getNoteById(81)?.content).toBe('Local-only text');
   }
+});
+
+it('keeps saved chats with Local, A and B while clearing the previous account from the screen', async () => {
+  require('@/db/migrate').runMigrations();
+  mockSessionUser = null;
+  const { useAuthStore } = require('@/store/useAuthStore');
+  const { useChatStore } = require('@/store/useChatStore');
+  const { chatRepository } = require('@/data');
+  await useAuthStore.getState().initialize();
+  const local = chatRepository.createConversation('Local chat');
+  useChatStore.getState().openConversation(local.id);
+  await useAuthStore.getState().signIn('account-a', 'synthetic');
+  expect(useChatStore.getState().activeConversationId).toBeNull();
+  expect(chatRepository.listConversations()).toEqual([]);
+  const accountA = chatRepository.createConversation('A chat');
+  useChatStore.getState().openConversation(accountA.id);
+  await useAuthStore.getState().signIn('account-b', 'synthetic');
+  expect(useChatStore.getState()).toMatchObject({ activeConversationId: null, messages: [] });
+  expect(chatRepository.listConversations()).toEqual([]);
+  chatRepository.createConversation('B chat');
+  await useAuthStore.getState().signOut();
+  expect(chatRepository.listConversations().map((chat: { title: string }) => chat.title)).toEqual([
+    'Local chat',
+  ]);
+  for (const [id, title] of [
+    ['account-a', 'A chat'],
+    ['account-b', 'B chat'],
+  ]) {
+    await useAuthStore.getState().signIn(id, 'synthetic');
+    expect(chatRepository.listConversations().map((chat: { title: string }) => chat.title)).toEqual(
+      [title],
+    );
+    await useAuthStore.getState().signOut();
+  }
+});
+
+it('abandons an in-flight chat before switching databases and never saves its late answer', async () => {
+  require('@/db/migrate').runMigrations();
+  const { useAuthStore } = require('@/store/useAuthStore');
+  const { useChatStore } = require('@/store/useChatStore');
+  const { chatRepository } = require('@/data');
+  await useAuthStore.getState().initialize();
+  let finish!: (value: { text: string; steps: []; sources: [] }) => void;
+  mockRunChatTurn.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const pending = useChatStore.getState().send('A private question', {
+    conversationId: null,
+    allowCloudFallback: false,
+  });
+  const signal = mockRunChatTurn.mock.calls[0][0].signal as AbortSignal;
+  await useAuthStore.getState().signIn('account-b', 'synthetic');
+  expect(signal.aborted).toBe(true);
+  finish({ text: 'A private answer', steps: [], sources: [] });
+  await pending.done;
+  expect(chatRepository.listConversations()).toEqual([]);
+  expect(useChatStore.getState()).toMatchObject({ messages: [], pending: null });
+  await useAuthStore.getState().signIn('account-a', 'synthetic');
+  expect(
+    chatRepository
+      .getMessages(pending.conversationId)
+      .map((message: { text: string }) => message.text),
+  ).toEqual(['A private question']);
+});
+
+it('deletes only the deleted account chats and keeps the Local chat it returns to', async () => {
+  require('@/db/migrate').runMigrations();
+  mockSessionUser = null;
+  const { useAuthStore } = require('@/store/useAuthStore');
+  const { chatRepository } = require('@/data');
+  await useAuthStore.getState().initialize();
+  chatRepository.createConversation('Keep Local chat');
+  await useAuthStore.getState().signIn('account-a', 'synthetic');
+  chatRepository.createConversation('Delete A chat');
+  const accountA = require('@/db').db.$client;
+  await useAuthStore.getState().deleteAccount();
+  expect(accountA.prepare('SELECT * FROM chat_conversations').all()).toEqual([]);
+  expect(chatRepository.listConversations().map((chat: { title: string }) => chat.title)).toEqual([
+    'Keep Local chat',
+  ]);
 });
 
 it('erases only the deleted account collection and returns to the retained Local collection', async () => {

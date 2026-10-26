@@ -4,7 +4,7 @@ import { SystemIcon } from '@/components/ui/SystemIcon';
 import { GroupedList } from './GroupedList';
 import { SectionHeader } from './SectionHeader';
 import { SpeakerAvatar } from './SpeakerAvatar';
-import { SwipeableCard } from '@/components/ui/SwipeableCard';
+import { SwipeableCard, type RestoreRow } from '@/components/ui/SwipeableCard';
 import type { SpeakerProfile } from '@/data/types';
 
 interface VoiceProfileListProps {
@@ -13,7 +13,8 @@ interface VoiceProfileListProps {
   onEnrollSpeaker?: () => void;
   unavailableMessage?: string;
   onOpenProfile: (profile: SpeakerProfile) => void;
-  onDelete: (profile: SpeakerProfile) => void;
+  /** `restore` slides a swiped row back; call it if the user cancels the delete. */
+  onDelete: (profile: SpeakerProfile, restore: RestoreRow) => void;
   onDeleteAll?: () => void;
 }
 
@@ -89,7 +90,7 @@ export function VoiceProfileList({
       <SectionHeader label="Speakers" />
       <GroupedList dividerInset={64}>
         {profiles.map((profile) => (
-          <SwipeableCard key={profile.id} onDelete={() => onDelete(profile)} inset>
+          <SwipeableCard key={profile.id} onDelete={(restore) => onDelete(profile, restore)} inset>
             <GroupedList.Row
               onPress={() => onOpenProfile(profile)}
               accessibilityRole="button"
