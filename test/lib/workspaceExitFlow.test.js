@@ -23,9 +23,9 @@ test("delete failure then retry", async () => {
   const failed = run(exitReducer, [
     { type: "startDelete", name: "Acme" },
     { type: "confirm" },
-    { type: "failed" },
+    { type: "failed", reason: null },
   ]);
-  assert.deepEqual(failed, { kind: "deleteFailed", name: "Acme" });
+  assert.deepEqual(failed, { kind: "deleteFailed", name: "Acme", reason: null });
 
   const state = run(exitReducer, [{ type: "confirm" }, { type: "succeeded" }], failed);
   assert.deepEqual(state, { kind: "deleted", name: "Acme" });
@@ -37,9 +37,13 @@ test("leave failure then retry", async () => {
   const failed = run(exitReducer, [
     { type: "startLeave", name: "Acme" },
     { type: "confirm" },
-    { type: "failed" },
+    { type: "failed", reason: "Workspace owners cannot leave" },
   ]);
-  assert.deepEqual(failed, { kind: "leaveFailed", name: "Acme" });
+  assert.deepEqual(failed, {
+    kind: "leaveFailed",
+    name: "Acme",
+    reason: "Workspace owners cannot leave",
+  });
   assert.deepEqual(exitReducer(failed, { type: "confirm" }), { kind: "leaving", name: "Acme" });
 });
 
@@ -80,7 +84,7 @@ test("left state keeps the left workspace's name", async () => {
   // Later input (a stale confirm, a repeated success) never renames or moves it.
   assert.deepEqual(exitReducer(left, { type: "confirm" }), left);
   assert.deepEqual(exitReducer(left, { type: "succeeded" }), left);
-  assert.deepEqual(exitReducer(left, { type: "failed" }), left);
+  assert.deepEqual(exitReducer(left, { type: "failed", reason: null }), left);
   assert.equal(left.name, "Acme");
 });
 
@@ -90,6 +94,6 @@ test("events that do not apply leave the state untouched", async () => {
 
   assert.equal(exitReducer(closed, { type: "confirm" }), closed);
   assert.equal(exitReducer(closed, { type: "succeeded" }), closed);
-  assert.equal(exitReducer(closed, { type: "failed" }), closed);
+  assert.equal(exitReducer(closed, { type: "failed", reason: null }), closed);
   assert.equal(exitReducer(closed, { type: "dismiss" }), closed);
 });

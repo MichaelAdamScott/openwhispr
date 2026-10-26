@@ -29,6 +29,7 @@ async function loadDialog(t) {
       "__toasts",
       "__transferCalls",
       "__transferImpl",
+      "__pickerDisabled",
     ]) {
       delete globalThis[key];
     }
@@ -69,8 +70,10 @@ async function loadDialog(t) {
         const passThrough = ({ children }) => React.createElement(React.Fragment, null, children);
         export const DropdownMenu = passThrough;
         export const DropdownMenuContent = passThrough;
-        export const DropdownMenuTrigger = ({ children, disabled }) =>
-          React.createElement("button", { "data-picker": "", disabled: disabled || undefined }, children);
+        export const DropdownMenuTrigger = ({ children, disabled }) => {
+          globalThis.__pickerDisabled = Boolean(disabled);
+          return React.createElement("button", { "data-picker": "", disabled: disabled || undefined }, children);
+        };
         export const DropdownMenuItem = ({ children }) =>
           React.createElement("div", { role: "menuitem" }, children);
       `,
@@ -112,7 +115,18 @@ async function loadDialog(t) {
   });
   const render = (state, overrides) =>
     renderToStaticMarkup(React.createElement(TransferOwnershipDialog, props(state, overrides)));
-  return { render, props, events, transferred, TransferOwnershipDialog };
+  // Mounted, so the roster read on opening runs; returns the text once it has settled.
+  const mount = async (state) => {
+    const container = installHostDom(t);
+    const root = createRoot(container);
+    await React.act(async () =>
+      root.render(React.createElement(TransferOwnershipDialog, props(state)))
+    );
+    const text = textOf(container);
+    await React.act(async () => root.unmount());
+    return text;
+  };
+  return { render, mount, props, events, transferred, TransferOwnershipDialog };
 }
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -124,9 +138,9 @@ test("closed renders nothing", async (t) => {
 });
 
 test("choosing without a pick shows the choose copy and a disabled transfer", async (t) => {
-  const { render } = await loadDialog(t);
+  const { mount } = await loadDialog(t);
 
-  const markup = render({ kind: "choosing", candidateId: null });
+  const markup = await mount({ kind: "choosing", candidateId: null });
 
   assert.match(markup, /workspaces\.transfer\.title/);
   assert.match(markup, /workspaces\.transfer\.body/);
@@ -140,29 +154,41 @@ test("choosing without a pick shows the choose copy and a disabled transfer", as
 });
 
 test("a preselected member shows the confirm copy and enables transfer", async (t) => {
-  const { render } = await loadDialog(t);
+  const { mount } = await loadDialog(t);
 
-  const markup = render({ kind: "choosing", candidateId: "u-admin" });
+  const markup = await mount({ kind: "choosing", candidateId: "u-admin" });
 
-  assert.match(
-    markup,
-    /workspaces\.transfer\.confirmTitle\|\{&quot;name&quot;:&quot;Adam Admin&quot;/
-  );
+  assert.match(markup, /workspaces\.transfer\.confirmTitle\|\{"name":"Adam Admin"/);
   assert.match(markup, /workspaces\.transfer\.confirmBody/);
   assert.match(markup, /Acme/);
-  assert.match(markup, /workspaces\.transfer\.submit</);
+  assert.match(markup, /workspaces\.transfer\.submit/);
   assert.notEqual(globalThis.__actionDialogProps.primary.disabled, true);
 });
 
 test("no candidates disables transfer", async (t) => {
-  const { render } = await loadDialog(t);
+  const { mount } = await loadDialog(t);
   globalThis.__store.members = [MEMBERS[0]];
 
-  const markup = render({ kind: "choosing", candidateId: null });
+  const markup = await mount({ kind: "choosing", candidateId: null });
 
   assert.match(markup, /workspaces\.transfer\.noCandidates/);
   assert.equal(globalThis.__actionDialogProps.primary.disabled, true);
-  assert.match(markup, /data-picker=""[^>]*disabled=""|disabled=""[^>]*data-picker=""/);
+  assert.equal(globalThis.__pickerDisabled, true);
+});
+
+test("a roster already in the store is read again, so a member who left isn't offered", async (t) => {
+  const { mount } = await loadDialog(t);
+  let reads = 0;
+  globalThis.__store.refreshMembers = async () => {
+    reads++;
+    globalThis.__store.members = MEMBERS.filter((m) => m.user_id !== "u-member");
+  };
+
+  const text = await mount({ kind: "choosing", candidateId: null });
+
+  assert.equal(reads, 1);
+  assert.match(text, /Adam Admin/);
+  assert.doesNotMatch(text, /Mia Member/);
 });
 
 test("transferring is busy with its own copy", async (t) => {
@@ -180,7 +206,7 @@ test("transferring is busy with its own copy", async (t) => {
 test("failed shows the error with Try again and Cancel", async (t) => {
   const { render } = await loadDialog(t);
 
-  const markup = render({ kind: "failed", candidateId: "u-admin" });
+  const markup = render({ kind: "failed", candidateId: "u-admin", reason: null });
 
   assert.match(markup, /role="alert"[^>]*>workspaces\.transfer\.failed/);
   assert.match(markup, /workspaces\.exit\.tryAgain/);
@@ -215,6 +241,15 @@ test("a rejected transfer dispatches failed without a toast", async (t) => {
   assert.deepEqual(events, ["confirm", "failed"]);
   assert.deepEqual(globalThis.__toasts, []);
   assert.deepEqual(transferred, []);
+});
+
+test("a refusal replaces the you're-still-the-Owner copy", async (t) => {
+  const { render } = await loadDialog(t);
+
+  const markup = render({ kind: "failed", candidateId: "u-admin", reason: "No seats left" });
+
+  assert.match(markup, /role="alert"[^>]*>No seats left</);
+  assert.doesNotMatch(markup, /workspaces\.transfer\.failed/);
 });
 
 test("member load failure offers retry", async (t) => {

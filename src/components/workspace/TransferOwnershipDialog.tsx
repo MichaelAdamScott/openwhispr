@@ -6,6 +6,7 @@ import {
   type TransferEvent,
   type TransferState,
 } from "../../lib/workspaceTransferFlow";
+import { serverRefusalMessage } from "../../services/cloudApi";
 import { transferOwnership } from "../../services/workspaceActions";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import type { Workspace, WorkspaceMember } from "../../types/electron";
@@ -42,21 +43,19 @@ export function TransferOwnershipDialog({
   const { toast } = useToast();
   const { user } = useAuth();
   const members = useWorkspaceStore((s) => s.members);
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const refreshMembers = useWorkspaceStore((s) => s.refreshMembers);
   const [load, setLoad] = useState<RosterLoad>("idle");
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   const open = state.kind !== "closed";
-  // The store keeps one roster, for the active workspace.
-  const rosterMissing = members.length === 0 || workspace.id !== activeWorkspaceId;
 
+  // Read on every opening: a roster from an earlier visit to Members can offer someone who has
+  // left since, and the server would refuse the transfer every time.
   useEffect(() => {
     if (!open) {
       setLoad("idle");
       return;
     }
-    if (!rosterMissing && loadAttempt === 0) return;
     let cancelled = false;
     setLoad("loading");
     refreshMembers(workspace.id).then(
@@ -70,9 +69,7 @@ export function TransferOwnershipDialog({
     return () => {
       cancelled = true;
     };
-    // The roster check is read once per opening; refreshing it must not retrigger the load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, workspace.id, loadAttempt]);
+  }, [open, workspace.id, loadAttempt, refreshMembers]);
 
   const candidates = useMemo(
     () => transferCandidates(members, user?.id ?? ""),
@@ -82,11 +79,7 @@ export function TransferOwnershipDialog({
   if (state.kind === "closed") return null;
 
   const status: "loading" | "error" | "ready" =
-    load === "error"
-      ? "error"
-      : load === "loading" || (load === "idle" && rosterMissing)
-        ? "loading"
-        : "ready";
+    load === "error" ? "error" : load === "loaded" ? "ready" : "loading";
 
   // Looked up in the whole roster: once the transfer lands the new owner is no
   // longer a candidate, but the dialog still names them until it closes.
@@ -103,8 +96,8 @@ export function TransferOwnershipDialog({
     dispatch({ type: "confirm" });
     try {
       await transferOwnership(workspace.id, target.user_id);
-    } catch {
-      dispatch({ type: "failed" });
+    } catch (error) {
+      dispatch({ type: "failed", reason: serverRefusalMessage(error) });
       return;
     }
     dismiss();
@@ -143,7 +136,7 @@ export function TransferOwnershipDialog({
       icon="info"
       title={title}
       body={body}
-      error={state.kind === "failed" ? t("workspaces.transfer.failed") : null}
+      error={state.kind === "failed" ? (state.reason ?? t("workspaces.transfer.failed")) : null}
       primary={{
         label: primaryLabel,
         onClick: () => {

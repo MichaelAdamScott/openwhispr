@@ -46,19 +46,24 @@ async function loadDialog(t) {
   const { WorkspaceExitDialog } = await vite.ssrLoadModule(
     "/components/workspace/WorkspaceExitDialog.tsx"
   );
+  const { CloudApiError } = await vite.ssrLoadModule("/services/cloudApi.ts");
   const events = [];
+  const failures = [];
   const render = (state, overrides = {}) =>
     renderToStaticMarkup(
       createElement(WorkspaceExitDialog, {
         state,
-        dispatch: (event) => events.push(event.type),
+        dispatch: (event) => {
+          events.push(event.type);
+          if (event.type === "failed") failures.push(event.reason);
+        },
         onConfirmLeave: async () => {},
         onConfirmDelete: async () => {},
         onChooseWorkspace: () => {},
         ...overrides,
       })
     );
-  return { render, events };
+  return { render, events, failures, CloudApiError };
 }
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -118,6 +123,43 @@ test("a rejected action dispatches failed", async (t) => {
   assert.deepEqual(events, ["confirm", "failed"]);
 });
 
+test("a failure carries the server's refusal, and only a refusal", async (t) => {
+  const { render, failures, CloudApiError } = await loadDialog(t);
+  const failWith = async (error) => {
+    render(
+      { kind: "confirmLeave", name: "Acme" },
+      {
+        onConfirmLeave: async () => {
+          throw error;
+        },
+      }
+    );
+    globalThis.__actionDialogProps.primary.onClick();
+    await tick();
+  };
+
+  await failWith(new CloudApiError("Workspace owners cannot leave", 400));
+  await failWith(new CloudApiError("Cloud API request failed", 0));
+  await failWith(new CloudApiError("Bad gateway", 502));
+  await failWith(new CloudApiError("Session expired", 401));
+  await failWith(new CloudApiError("API error: 404", 404));
+  await failWith(new Error("offline"));
+
+  assert.deepEqual(failures, ["Workspace owners cannot leave", null, null, null, null, null]);
+});
+
+test("a refusal replaces the check-your-connection copy", async (t) => {
+  const { render } = await loadDialog(t);
+
+  const leave = render({ kind: "leaveFailed", name: "Acme", reason: "Owners can't leave" });
+  assert.match(leave, /role="alert"[^>]*>Owners can&#x27;t leave</);
+  assert.doesNotMatch(leave, /workspaces\.exit\.leave\.failed/);
+
+  const remove = render({ kind: "deleteFailed", name: "Acme", reason: "Not allowed" });
+  assert.match(remove, /<p>Not allowed<\/p>/);
+  assert.doesNotMatch(remove, /workspaces\.exit\.deleteFailed\.body/);
+});
+
 test("leaving is busy with the leaving label", async (t) => {
   const { render } = await loadDialog(t);
 
@@ -131,7 +173,7 @@ test("leaving is busy with the leaving label", async (t) => {
 test("leaveFailed shows the error line with Try again and Cancel", async (t) => {
   const { render } = await loadDialog(t);
 
-  const markup = render({ kind: "leaveFailed", name: "Acme" });
+  const markup = render({ kind: "leaveFailed", name: "Acme", reason: null });
 
   assert.match(markup, /role="alert"[^>]*>workspaces\.exit\.leave\.failed\|/);
   assert.match(markup, /workspaces\.exit\.tryAgain/);
@@ -166,7 +208,7 @@ test("deleting is busy: no Cancel, primary disabled", async (t) => {
 test("deleteFailed offers Try again and Cancel", async (t) => {
   const { render } = await loadDialog(t);
 
-  const markup = render({ kind: "deleteFailed", name: "Acme" });
+  const markup = render({ kind: "deleteFailed", name: "Acme", reason: null });
 
   assert.match(markup, /workspaces\.exit\.deleteFailed\.title/);
   assert.match(markup, /workspaces\.exit\.deleteFailed\.body\|/);

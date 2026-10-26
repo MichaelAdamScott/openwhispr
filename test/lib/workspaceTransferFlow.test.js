@@ -75,9 +75,9 @@ test("failed then confirm retries with the same candidate", async () => {
   const failed = run(transferReducer, [
     { type: "open", candidateId: "u1" },
     { type: "confirm" },
-    { type: "failed" },
+    { type: "failed", reason: "No seats left" },
   ]);
-  assert.deepEqual(failed, { kind: "failed", candidateId: "u1" });
+  assert.deepEqual(failed, { kind: "failed", candidateId: "u1", reason: "No seats left" });
 
   assert.deepEqual(transferReducer(failed, { type: "confirm" }), {
     kind: "transferring",
@@ -89,7 +89,7 @@ test("picking after a failure goes back to choosing", async () => {
   const { transferReducer } = await load();
 
   const state = transferReducer(
-    { kind: "failed", candidateId: "u1" },
+    { kind: "failed", candidateId: "u1", reason: null },
     {
       type: "pick",
       candidateId: "u2",
@@ -102,9 +102,12 @@ test("picking after a failure goes back to choosing", async () => {
 test("dismiss closes a choosing or failed dialog", async () => {
   const { transferReducer } = await load();
 
-  assert.deepEqual(transferReducer({ kind: "failed", candidateId: "u1" }, { type: "dismiss" }), {
-    kind: "closed",
-  });
+  assert.deepEqual(
+    transferReducer({ kind: "failed", candidateId: "u1", reason: null }, { type: "dismiss" }),
+    {
+      kind: "closed",
+    }
+  );
   assert.deepEqual(transferReducer({ kind: "choosing", candidateId: null }, { type: "dismiss" }), {
     kind: "closed",
   });
@@ -114,5 +117,5 @@ test("failed outside transferring is ignored", async () => {
   const { transferReducer } = await load();
   const choosing = { kind: "choosing", candidateId: "u1" };
 
-  assert.equal(transferReducer(choosing, { type: "failed" }), choosing);
+  assert.equal(transferReducer(choosing, { type: "failed", reason: null }), choosing);
 });

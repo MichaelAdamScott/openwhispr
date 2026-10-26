@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import type { ExitEvent, ExitState } from "../../lib/workspaceExitFlow";
+import { serverRefusalMessage } from "../../services/cloudApi";
 import { WorkspaceActionDialog } from "./WorkspaceActionDialog";
 
 interface WorkspaceExitDialogProps {
@@ -32,8 +33,8 @@ export function WorkspaceExitDialog({
     try {
       await action();
       dispatch({ type: "succeeded" });
-    } catch {
-      dispatch({ type: "failed" });
+    } catch (error) {
+      dispatch({ type: "failed", reason: serverRefusalMessage(error) });
     }
   };
 
@@ -86,7 +87,7 @@ export function WorkspaceExitDialog({
           {...common}
           icon="info"
           {...leaveCopy}
-          error={t("workspaces.exit.leave.failed", { name })}
+          error={state.reason ?? t("workspaces.exit.leave.failed", { name })}
           primary={{
             label: t("workspaces.exit.tryAgain"),
             onClick: () => void run(onConfirmLeave),
@@ -146,7 +147,7 @@ export function WorkspaceExitDialog({
           {...common}
           icon="info"
           title={t("workspaces.exit.deleteFailed.title")}
-          body={t("workspaces.exit.deleteFailed.body", { name })}
+          body={state.reason ?? t("workspaces.exit.deleteFailed.body", { name })}
           primary={{
             label: t("workspaces.exit.tryAgain"),
             onClick: () => void run(onConfirmDelete),

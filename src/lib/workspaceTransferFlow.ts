@@ -6,13 +6,15 @@ import type { WorkspaceMember } from "../types/electron";
 export type TransferState =
   | { kind: "closed" }
   | { kind: "choosing"; candidateId: string | null }
-  | { kind: "transferring" | "failed"; candidateId: string };
+  | { kind: "transferring"; candidateId: string }
+  // `reason` is the server's refusal, null when the request may not have reached it.
+  | { kind: "failed"; candidateId: string; reason: string | null };
 
 export type TransferEvent =
   | { type: "open"; candidateId?: string }
   | { type: "pick"; candidateId: string }
   | { type: "confirm" }
-  | { type: "failed" }
+  | { type: "failed"; reason: string | null }
   | { type: "dismiss" };
 
 const displayName = (member: WorkspaceMember): string => member.name || member.email;
@@ -51,7 +53,7 @@ export function transferReducer(state: TransferState, event: TransferEvent): Tra
       return state;
     case "failed":
       return state.kind === "transferring"
-        ? { kind: "failed", candidateId: state.candidateId }
+        ? { kind: "failed", candidateId: state.candidateId, reason: event.reason }
         : state;
     case "dismiss":
       // Also the success path: the dialog dismisses itself once the transfer
