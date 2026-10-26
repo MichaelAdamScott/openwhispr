@@ -22,6 +22,9 @@ interface ChatStepsProps {
 }
 
 const SLOW_AFTER_MS = 15_000;
+// The steps before the answer finish in a moment, so each one's status stays up this long, in turn,
+// while the request is already on its way.
+const STATUS_DWELL_MS = 700;
 const SLOW_LABEL = 'Still working';
 
 const sourcesLabel = (count: number): string => {
@@ -51,13 +54,24 @@ export function ChatSteps({
   // A saved message can carry a step that was still active when the app closed;
   // it must not show a spinner.
   const shownSteps = working ? steps : steps.map((step): ChatStep => ({ ...step, status: 'done' }));
-  const activeStep = steps.find((step) => step.status === 'active');
+  const statuses = steps.flatMap((step) => {
+    const status = step.status === 'active' ? step.label : step.activeLabel;
+    return status ? [status] : [];
+  });
+  const [statusIndex, setStatusIndex] = useState(0);
+  const lastStatus = statuses.length - 1;
+  useEffect(() => {
+    if (!working || statusIndex >= lastStatus) return;
+    const timer = setTimeout(() => setStatusIndex((index) => index + 1), STATUS_DWELL_MS);
+    return () => clearTimeout(timer);
+  }, [working, statusIndex, lastStatus]);
+  const status = statuses[Math.min(statusIndex, lastStatus)];
   const elapsedMs = working && startedAt != null ? now - startedAt : 0;
   const slow = working && startedAt != null && elapsedMs >= SLOW_AFTER_MS;
   const headerLabel = slow
     ? SLOW_LABEL
     : working
-      ? (activeStep?.label ?? 'Thinking…')
+      ? (status ?? 'Thinking…')
       : sourcesLabel(sourceCount);
 
   // Announced once rather than through a live region, which Android would also read on every

@@ -67,6 +67,34 @@ describe('ChatAssistantMessage', () => {
     expect(onOpenNote).toHaveBeenCalledWith(7);
   });
 
+  it('shows only the notes the answer named, and counts only them', () => {
+    const read: ChatMessage = {
+      ...message,
+      sources: [
+        { noteId: 7, title: 'Pricing call', cited: true },
+        { noteId: 8, title: 'Roadmap', cited: false },
+      ],
+    };
+    const { queryByText, getByText } = render(
+      <ChatAssistantMessage message={read} onOpenNote={jest.fn()} />,
+    );
+    expect(getByText('Pricing call')).toBeTruthy();
+    expect(queryByText('Roadmap')).toBeNull();
+    expect(getByText('Searched your notes · 1 source')).toBeTruthy();
+  });
+
+  it('shows no source when the answer named none of the notes it read', () => {
+    const read: ChatMessage = {
+      ...message,
+      sources: [{ noteId: 8, title: 'Roadmap', cited: false }],
+    };
+    const { queryByRole, getByText } = render(
+      <ChatAssistantMessage message={read} onOpenNote={jest.fn()} />,
+    );
+    expect(queryByRole('link')).toBeNull();
+    expect(getByText('Searched your notes · no matches')).toBeTruthy();
+  });
+
   it('disables the chip of a note deleted since the answer, as soon as it goes', () => {
     const onOpenNote = jest.fn();
     const twoSources: ChatMessage = {

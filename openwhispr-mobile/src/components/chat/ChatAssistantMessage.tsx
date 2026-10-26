@@ -32,6 +32,13 @@ export function ChatAssistantMessage({
     return () => clearTimeout(timer);
   }, [copies]);
 
+  // Every note read is kept for the privacy check on later turns, but only one the answer named
+  // is shown as its source.
+  const sources = useMemo(
+    () => message.sources.filter((source) => source.cited !== false),
+    [message.sources],
+  );
+
   // Every note write reloads the notes list, so it's the signal to check the sources again: a
   // note deleted since the answer was saved would open on nothing.
   const notesRevision = useNotesStore((s) => s.notes);
@@ -39,12 +46,12 @@ export function ChatAssistantMessage({
   const missingNoteIds = useMemo(
     () =>
       new Set(
-        message.sources
+        sources
           .filter((source) => getNoteById(source.noteId) === null)
           .map((source) => source.noteId),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [message.sources, getNoteById, notesRevision],
+    [sources, getNoteById, notesRevision],
   );
 
   const copy = async (): Promise<void> => {
@@ -63,12 +70,12 @@ export function ChatAssistantMessage({
     <View className="gap-1 self-stretch">
       {/* A message saved without steps never searched, so claiming it did would mislead. */}
       {message.steps.length > 0 ? (
-        <ChatSteps steps={message.steps} variant="done" sourceCount={message.sources.length} />
+        <ChatSteps steps={message.steps} variant="done" sourceCount={sources.length} />
       ) : null}
       <MarkdownRenderer content={message.text} selectable />
-      {message.sources.length > 0 ? (
+      {sources.length > 0 ? (
         <View className="mt-2 flex-row flex-wrap gap-2">
-          {message.sources.map((source) => {
+          {sources.map((source) => {
             // Kept, so the chips still match the step summary's source count.
             const missing = missingNoteIds.has(source.noteId);
             return (

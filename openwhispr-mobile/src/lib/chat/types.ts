@@ -6,11 +6,15 @@ export interface ChatStep {
   status: 'active' | 'done';
   label: string;
   detail?: string;
+  /** What a finished step said while it worked, so the status line can still show it in turn. */
+  activeLabel?: string;
 }
 
 export interface ChatSource {
   noteId: number;
   title: string;
+  /** Whether the answer named this note. Saved before this existed, an answer's sources count all. */
+  cited?: boolean;
 }
 
 export interface ChatMessage {

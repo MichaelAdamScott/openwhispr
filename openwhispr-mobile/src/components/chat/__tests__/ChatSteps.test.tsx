@@ -49,6 +49,40 @@ describe('ChatSteps', () => {
     expect(getByRole('button').props.accessibilityState).toEqual({ expanded: true });
   });
 
+  it('shows each step’s status in turn, though the steps before the answer finished at once', () => {
+    jest.useFakeTimers();
+    const quickSteps: ChatStep[] = [
+      {
+        id: 'calendar',
+        status: 'done',
+        label: 'Checked your calendar',
+        activeLabel: 'Checking your calendar…',
+      },
+      {
+        id: 'search',
+        status: 'done',
+        label: 'Searched your notes',
+        activeLabel: 'Searching your notes…',
+      },
+      { id: 'write', status: 'active', label: 'Writing your answer…' },
+    ];
+    const { getByText } = render(<ChatSteps steps={quickSteps} variant="working" />);
+
+    expect(getByText('Checking your calendar…')).toBeTruthy();
+    act(() => {
+      jest.advanceTimersByTime(700);
+    });
+    expect(getByText('Searching your notes…')).toBeTruthy();
+    act(() => {
+      jest.advanceTimersByTime(700);
+    });
+    expect(getByText('Writing your answer…')).toBeTruthy();
+    act(() => {
+      jest.advanceTimersByTime(5_000);
+    });
+    expect(getByText('Writing your answer…')).toBeTruthy();
+  });
+
   it('shows only reported steps when opened', () => {
     const { getAllByTestId, getByRole, queryByText } = render(
       <ChatSteps

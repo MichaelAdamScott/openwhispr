@@ -16,6 +16,7 @@ import {
   formatChatTime,
   isInChatCalendarWindow,
   lacksNoteText,
+  markCitedSources,
   parseChatQuery,
   type ChatCalendar,
   type ChatNotesPeriod,
@@ -274,8 +275,16 @@ export async function runChatTurn(
   const steps: ChatStep[] = [];
   const setStep = (step: ChatStep): void => {
     const index = steps.findIndex((existing) => existing.id === step.id);
-    if (index === -1) steps.push(step);
-    else steps[index] = step;
+    if (index === -1) {
+      steps.push(step);
+    } else {
+      const previous = steps[index];
+      const activeLabel =
+        step.activeLabel ??
+        previous.activeLabel ??
+        (previous.status === 'active' ? previous.label : undefined);
+      steps[index] = step.status === 'done' && activeLabel ? { ...step, activeLabel } : step;
+    }
     onSteps([...steps]);
   };
   const removeStep = (id: ChatStepId): void => {
@@ -430,7 +439,8 @@ export async function runChatTurn(
     // The first payload always reads at least the note the retry keeps, so the read step is
     // already in place before the write step and is relabelled there.
     if (payload.sources.length > 0) {
-      setStep({ id: 'read', status: 'done', label: describeReading(payload.sources).done });
+      const reading = describeReading(payload.sources);
+      setStep({ id: 'read', status: 'done', label: reading.done, activeLabel: reading.active });
     } else {
       removeStep('read');
     }
@@ -439,5 +449,9 @@ export async function runChatTurn(
   throwIfAborted(signal);
 
   setStep({ id: 'write', status: 'done', label: 'Wrote the answer' });
-  return { text: response.text, steps: [...steps], sources: payload.sources };
+  return {
+    text: response.text,
+    steps: [...steps],
+    sources: markCitedSources(payload.sources, response.text),
+  };
 }

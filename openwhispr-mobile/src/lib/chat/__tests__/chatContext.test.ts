@@ -4,6 +4,7 @@ import {
   CHAT_NOTE_CHAR_CAP,
   CHAT_SYSTEM_PROMPT,
   extractSearchTerms,
+  markCitedSources,
   parseChatQuery,
 } from '../chatContext';
 import type { ChatMessage } from '../types';
@@ -61,6 +62,8 @@ describe('parseChatQuery', () => {
       ['What did I say yesterday?', day(21), day(22), 'yesterday', false],
       ['What happened this week?', day(19), day(23), 'this week', false],
       ['What happened last  week?', day(12), day(19), 'last week', false],
+      ['Summarize last weeks notes', day(12), day(19), 'last week', false],
+      ['What are this weeks priorities?', day(19), day(23), 'this week', false],
       ['Anything recent?', day(16), day(23), 'the last 7 days', true],
       ['What did I decide Recently?', day(16), day(23), 'the last 7 days', true],
       ['Who did I meet lately?', day(16), day(23), 'the last 7 days', true],
@@ -86,6 +89,10 @@ describe('parseChatQuery', () => {
       scope: expect.objectContaining({ meetingsOnly: true, label: 'this week' }),
     });
     expect(parseChatQuery('What did we decide on pricing today?', NOW).terms).toEqual(['pricing']);
+    expect(parseChatQuery('Summarize last weeks meetings', NOW)).toEqual({
+      terms: [],
+      scope: expect.objectContaining({ meetingsOnly: true, label: 'last week' }),
+    });
   });
 
   it('names no period, and keeps the topic words, when the question names none', () => {
@@ -733,5 +740,37 @@ describe('buildChatPayload', () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
     expect(text).toMatch(/### Plan \(updated Oct 20\)\nBody/);
     expect(text.endsWith('USER QUESTION:\nWhy?')).toBe(true);
+  });
+});
+
+describe('markCitedSources', () => {
+  const sources = [
+    { noteId: 1, title: 'Pricing call' },
+    { noteId: 2, title: 'Sync' },
+    { noteId: 3, title: 'Untitled' },
+  ];
+
+  it('marks the notes the answer names by title, however it formats them', () => {
+    expect(
+      markCitedSources(sources, 'From **pricing  call** (updated Oct 20): it stays at $12.'),
+    ).toEqual([
+      { noteId: 1, title: 'Pricing call', cited: true },
+      { noteId: 2, title: 'Sync', cited: false },
+      { noteId: 3, title: 'Untitled', cited: false },
+    ]);
+    expect(markCitedSources(sources, 'In “Sync”, Dana agreed.')[1].cited).toBe(true);
+  });
+
+  it('marks none when the answer says the notes don’t cover it', () => {
+    expect(
+      markCitedSources(
+        sources,
+        'The notes don’t cover this. Tokyo is mild this time of year.',
+      ).some((source) => source.cited),
+    ).toBe(false);
+  });
+
+  it('needs the whole title, not a word inside another', () => {
+    expect(markCitedSources(sources, 'The async job is syncing.')[1].cited).toBe(false);
   });
 });

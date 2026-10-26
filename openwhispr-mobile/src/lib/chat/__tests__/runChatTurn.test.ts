@@ -136,17 +136,34 @@ describe('runChatTurn', () => {
         status: 'done',
         label: 'Checked your calendar',
         detail: `Standup · ${formatTime(new Date(2026, 9, 22, 10, 0))}`,
+        activeLabel: 'Checking your calendar…',
       },
-      { id: 'search', status: 'done', label: 'Searched your notes', detail: '2 notes match' },
-      { id: 'read', status: 'done', label: 'Read “Pricing call” and 1 more' },
-      { id: 'write', status: 'done', label: 'Wrote the answer' },
+      {
+        id: 'search',
+        status: 'done',
+        label: 'Searched your notes',
+        detail: '2 notes match',
+        activeLabel: 'Searching your notes…',
+      },
+      {
+        id: 'read',
+        status: 'done',
+        label: 'Read “Pricing call” and 1 more',
+        activeLabel: 'Reading “Pricing call” and 1 more…',
+      },
+      {
+        id: 'write',
+        status: 'done',
+        label: 'Wrote the answer',
+        activeLabel: 'Writing your answer…',
+      },
     ]);
     expect(result).toEqual({
       text: 'The answer.',
       steps,
       sources: [
-        { noteId: 1, title: 'Pricing call' },
-        { noteId: 2, title: 'Roadmap review' },
+        { noteId: 1, title: 'Pricing call', cited: false },
+        { noteId: 2, title: 'Roadmap review', cited: false },
       ],
     });
     expect(deps.chat).toHaveBeenCalledWith(
@@ -156,6 +173,19 @@ describe('runChatTurn', () => {
         inferenceRoute: { mode: 'openwhispr', scope: 'noteChat' },
       }),
     );
+  });
+
+  it('keeps what each finished step said while it worked', async () => {
+    const input = makeInput();
+
+    await runChatTurn(input, makeDeps());
+
+    expect(lastSteps(input.onSteps).map(({ id, activeLabel }) => ({ id, activeLabel }))).toEqual([
+      { id: 'calendar', activeLabel: 'Checking your calendar…' },
+      { id: 'search', activeLabel: 'Searching your notes…' },
+      { id: 'read', activeLabel: 'Reading “Pricing call” and 1 more…' },
+      { id: 'write', activeLabel: 'Writing your answer…' },
+    ]);
   });
 
   it('starts each step active and sends a fresh list on every change', async () => {
@@ -235,6 +265,35 @@ describe('runChatTurn', () => {
 
     expect(lastSteps(input.onSteps)[0].detail).toBe('No meetings coming up');
     expect(sentText(deps.chat)).toContain('No meetings in the next 48 hours.');
+  });
+
+  it('cites only the notes the answer names, though it read them all', async () => {
+    const chat = jest.fn(async () => ({
+      text: 'Per **Roadmap review**, the launch moved to May.',
+      model: 'test',
+    }));
+    const input = makeInput();
+
+    const result = await runChatTurn(input, makeDeps({ chat }));
+
+    expect(result.sources).toEqual([
+      { noteId: 1, title: 'Pricing call', cited: false },
+      { noteId: 2, title: 'Roadmap review', cited: true },
+    ]);
+    expect(lastSteps(input.onSteps).find((step) => step.id === 'read')?.label).toBe(
+      'Read “Pricing call” and 1 more',
+    );
+  });
+
+  it('cites no note when the answer says the notes don’t cover it', async () => {
+    const chat = jest.fn(async () => ({
+      text: 'The notes don’t cover this. Tokyo is mild in October.',
+      model: 'test',
+    }));
+
+    const result = await runChatTurn(makeInput(), makeDeps({ chat }));
+
+    expect(result.sources.map((source) => source.cited)).toEqual([false, false]);
   });
 
   it('sends no notes when nothing matches', async () => {
@@ -712,7 +771,7 @@ describe('runChatTurn', () => {
     expect(sentText(chat, 0).match(/###/g)).toHaveLength(2);
     expect(sentText(chat, 1).match(/###/g)).toHaveLength(1);
     expect(result.text).toBe('Short answer.');
-    expect(result.sources).toEqual([{ noteId: 1, title: 'Pricing call' }]);
+    expect(result.sources).toEqual([{ noteId: 1, title: 'Pricing call', cited: false }]);
   });
 
   it('drops the chat history from a context-limit retry', async () => {
@@ -771,11 +830,12 @@ describe('runChatTurn', () => {
     const longestRun = Math.max(...(retryText.match(/p{10,}/g) ?? ['']).map((run) => run.length));
     expect(longestRun).toBeGreaterThan(2_500);
     expect(longestRun).toBeLessThanOrEqual(3_000);
-    expect(result.sources).toEqual([{ noteId: 5, title: 'Pricing deep dive' }]);
+    expect(result.sources).toEqual([{ noteId: 5, title: 'Pricing deep dive', cited: false }]);
     expect(lastSteps(input.onSteps).find((step) => step.id === 'read')).toEqual({
       id: 'read',
       status: 'done',
       label: 'Read “Pricing deep dive”',
+      activeLabel: 'Reading “Pricing deep dive”…',
     });
     expect(lastSteps(input.onSteps).map((step) => step.id)).toEqual([
       'calendar',
