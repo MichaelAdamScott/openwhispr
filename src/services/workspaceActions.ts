@@ -9,13 +9,19 @@ import { createWorkspaceActions } from "./workspaceActionsCore";
 const actions = createWorkspaceActions({
   api: WorkspacesService,
   store: {
-    getActiveWorkspaceId: () => useWorkspaceStore.getState().activeWorkspaceId,
-    setActiveWorkspaceId: (id) => useWorkspaceStore.getState().setActiveWorkspaceId(id),
     forgetWorkspace: (id) => useWorkspaceStore.getState().forgetWorkspace(id),
-    refresh: () => useWorkspaceStore.getState().refresh(),
+    refresh: (options) => useWorkspaceStore.getState().refresh(options),
     refreshMembers: (workspaceId) => useWorkspaceStore.getState().refreshMembers(workspaceId),
+    // An account switch empties the list without an error, which must not read as "not listed".
+    listedWorkspaceIds: () => {
+      const { loaded, error, workspaces } = useWorkspaceStore.getState();
+      return loaded && !error ? workspaces.map((w) => w.id) : null;
+    },
+    memberRole: (userId) =>
+      useWorkspaceStore.getState().members.find((m) => m.user_id === userId)?.role ?? null,
   },
   sync: syncService,
+  notifyUsageChanged: () => window.dispatchEvent(new Event("usage-changed")),
 });
 
 export const { leaveWorkspace, deleteWorkspace, transferOwnership } = actions;

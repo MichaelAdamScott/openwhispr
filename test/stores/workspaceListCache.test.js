@@ -28,6 +28,7 @@ async function loadStore(t, { initialStorage = {}, accountId = "acct-1", list } 
       "/services/WorkspacesService": `
         export const WorkspacesService = {
           list: () => globalThis.__workspaceCacheTest.list(),
+          create: (name) => globalThis.__workspaceCacheTest.create(name),
         };
       `,
       "/policyStore": `
@@ -189,4 +190,101 @@ test("forgetting leaves another account's cache alone", async (t) => {
   store.getState().forgetWorkspace("gone");
 
   assert.equal(storage.getItem(CACHE_KEY), other);
+});
+
+const GONE = { id: "gone", plan: "business", status: "active", capabilities: {} };
+
+test("forgetting the active workspace makes the next one active, even if the refresh fails", async (t) => {
+  const { store } = await loadStore(t, { list: async () => [GONE, ...WORKSPACES] });
+  await store.getState().refresh();
+  assert.equal(store.getState().activeWorkspaceId, "gone");
+
+  store.getState().forgetWorkspace("gone");
+  globalThis.__workspaceCacheTest.list = failing;
+  await store.getState().refresh({ fresh: true });
+
+  assert.equal(store.getState().activeWorkspaceId, "team");
+  assert.equal(store.getState().error, true);
+});
+
+test("a fresh refresh drops the answer of a request sent before the change", async (t) => {
+  let answerStale;
+  const { storage, store } = await loadStore(t, {
+    list: () => new Promise((resolve) => (answerStale = () => resolve([GONE, ...WORKSPACES]))),
+  });
+  // A focus or reconnect refresh is in flight when the user leaves "gone".
+  const stale = store.getState().refresh();
+  globalThis.__workspaceCacheTest.list = async () => WORKSPACES;
+
+  store.getState().forgetWorkspace("gone");
+  const fresh = store.getState().refresh({ fresh: true });
+  assert.notEqual(fresh, stale);
+  await fresh;
+  answerStale();
+  await stale;
+
+  assert.deepEqual(store.getState().workspaces, WORKSPACES);
+  assert.equal(store.getState().activeWorkspaceId, "team");
+  assert.deepEqual(JSON.parse(storage.getItem(CACHE_KEY)).workspaces, WORKSPACES);
+});
+
+test("a plain refresh still joins the request in flight", async (t) => {
+  let calls = 0;
+  const { store } = await loadStore(t, {
+    list: async () => {
+      calls++;
+      return WORKSPACES;
+    },
+  });
+  const first = store.getState().refresh();
+  assert.equal(store.getState().refresh(), first);
+  await first;
+  assert.equal(calls, 1);
+});
+
+test("a workspace created while a refresh is in flight survives that refresh's answer", async (t) => {
+  const created = { id: "new", plan: "free", status: "active", capabilities: {} };
+  let answerStale;
+  const { store } = await loadStore(t, {
+    list: () => new Promise((resolve) => (answerStale = () => resolve(WORKSPACES))),
+  });
+  globalThis.__workspaceCacheTest.create = async () => created;
+  const stale = store.getState().refresh();
+  globalThis.__workspaceCacheTest.list = async () => [...WORKSPACES, created];
+
+  await store.getState().createWorkspace("New");
+  answerStale();
+  await stale;
+  // Let the request the create started settle; no new refresh is asked for here.
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    store.getState().workspaces.map((w) => w.id),
+    ["team", "new"]
+  );
+});
+
+test("creating with no refresh in flight asks the server nothing more", async (t) => {
+  let lists = 0;
+  const { store } = await loadStore(t, {
+    list: async () => {
+      lists++;
+      return WORKSPACES;
+    },
+  });
+  await store.getState().refresh();
+  globalThis.__workspaceCacheTest.create = async () => ({
+    id: "new",
+    plan: "free",
+    status: "active",
+    capabilities: {},
+  });
+
+  await store.getState().createWorkspace("New");
+
+  assert.equal(lists, 1);
+  assert.deepEqual(
+    store.getState().workspaces.map((w) => w.id),
+    ["team", "new"]
+  );
 });

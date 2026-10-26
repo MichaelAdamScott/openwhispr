@@ -141,7 +141,7 @@ function GeneralPage({
     setSaving(true);
     try {
       await WorkspacesService.update(workspace.id, { name: name.trim() });
-      await refresh();
+      await refresh({ fresh: true });
       toast({ title: t("settingsPage.workspace.general.saved") });
     } catch (error) {
       toast({

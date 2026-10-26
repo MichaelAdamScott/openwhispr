@@ -15,10 +15,17 @@ interface WorkspaceState {
   members: WorkspaceMember[];
 
   setActiveWorkspaceId: (id: string | null) => void;
-  /** Drops a workspace the user just left or deleted, so a failed refresh can't show it again. */
+  /**
+   * Drops a workspace the user just left or deleted, so a failed refresh can't show it again, and
+   * moves the active workspace off it.
+   */
   forgetWorkspace: (id: string) => void;
   resetForAccountChange: () => void;
-  refresh: () => Promise<void>;
+  /**
+   * Joins the request in flight, if any. `fresh` is for callers that just changed the list on the
+   * server: an answer to a request sent before that change is dropped, and a new one is sent.
+   */
+  refresh: (options?: { fresh?: boolean }) => Promise<void>;
   createWorkspace: (name: string) => Promise<Workspace>;
   refreshMembers: (workspaceId: string) => Promise<void>;
 }
@@ -116,6 +123,9 @@ function clearWorkspaceListCache(): void {
 }
 
 let refreshPromise: Promise<void> | null = null;
+// Bumped by a fresh refresh; a request sent under an older epoch answers for a list that changed.
+let listEpoch = 0;
+let refreshPromiseEpoch = 0;
 let membersRequestSeq = 0;
 let accountGeneration = 0;
 
@@ -167,8 +177,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   forgetWorkspace: (id) => {
-    set((s) => ({ workspaces: s.workspaces.filter((w) => w.id !== id) }));
+    const workspaces = get().workspaces.filter((w) => w.id !== id);
+    set({ workspaces });
     pruneWorkspaceListCache(usePolicyStore.getState().accountId, id);
+    // Chosen now, not by the refresh that follows: a failed refresh keeps the old active id.
+    if (get().activeWorkspaceId === id) {
+      get().setActiveWorkspaceId(defaultActiveWorkspaceId(workspaces));
+    }
   },
 
   resetForAccountChange: () => {
@@ -190,15 +205,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
-  refresh: () => {
-    if (refreshPromise) return refreshPromise;
+  refresh: ({ fresh = false } = {}) => {
+    if (fresh) listEpoch += 1;
+    if (refreshPromise && refreshPromiseEpoch === listEpoch) return refreshPromise;
     const generation = accountGeneration;
+    const epoch = listEpoch;
+    const superseded = (): boolean => generation !== accountGeneration || epoch !== listEpoch;
     set({ loading: true });
     let request!: Promise<void>;
     request = (async () => {
       try {
         const workspaces = await WorkspacesService.list();
-        if (generation !== accountGeneration) return;
+        if (superseded()) return;
         const activeId = get().activeWorkspaceId;
         const stillValid = activeId && workspaces.some((w) => w.id === activeId);
         const resolvedActiveId = stillValid ? activeId : defaultActiveWorkspaceId(workspaces);
@@ -213,7 +231,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         writeWorkspaceListCache(usePolicyStore.getState().accountId, workspaces);
         refreshForWorkspace(resolvedActiveId);
       } catch (error) {
-        if (generation !== accountGeneration) return;
+        if (superseded()) return;
         logger.error(
           "Failed to load workspaces",
           { error: (error as Error).message },
@@ -236,6 +254,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
     })();
     refreshPromise = request;
+    refreshPromiseEpoch = epoch;
     return request;
   },
 
@@ -244,6 +263,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const workspace = await WorkspacesService.create(name);
     if (generation === accountGeneration) {
       set((s) => ({ workspaces: [...s.workspaces, workspace] }));
+      // A list request sent before the create would answer without it and drop it again.
+      if (refreshPromise) void get().refresh({ fresh: true });
     }
     return workspace;
   },
