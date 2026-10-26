@@ -48,7 +48,12 @@ const MOCKS = {
       getState: read,
     });
   `,
-  "/services/WorkspacesService": `export const WorkspacesService = { listMembers: async () => [] };`,
+  "/services/WorkspacesService": `
+    export const WorkspacesService = {
+      listMembers: async () => [],
+      listJoinable: () => globalThis.__listJoinable(),
+    };
+  `,
   "/services/membershipActions": `export async function afterWorkspaceJoined() {}`,
   "/CreateWorkspaceDialog": `export default function CreateWorkspaceDialog() { return null; }`,
   "/stores/policyStore": `
@@ -99,7 +104,19 @@ async function setup(t) {
     joinYourTeam: await load("/components/JoinYourTeamModal.tsx"),
     postMigration: await load("/components/PostMigrationOnboarding.tsx"),
   };
-  const { useModalGateStore } = await vite.ssrLoadModule("/stores/modalGateStore.ts");
+  const { useModalGateStore, useModalGate } = await vite.ssrLoadModule("/stores/modalGateStore.ts");
+  const { useJoinableWorkspaces } = await vite.ssrLoadModule("/hooks/useJoinableWorkspaces.ts");
+  // Wired as ControlPanel wires it: the check holds the gate until it answers.
+  modals.joinCheck = function JoinCheck() {
+    const { joinable, pending } = useJoinableWorkspaces("user-1", true);
+    useModalGate("joinYourTeamPending", pending);
+    return React.createElement(modals.joinYourTeam, {
+      joinable,
+      domain: "acme.com",
+      onDismiss() {},
+      onRequested() {},
+    });
+  };
 
   root = createRoot(container);
   const render = async (modal) =>
@@ -166,6 +183,26 @@ for (const [name, open, closed] of [
     await render(closed(modals));
     assert.equal(globalThis.__intro.open, true);
     assert.deepEqual(useModalGateStore.getState().open, {});
+  });
+}
+
+for (const [answer, introOpen] of [
+  ["nothing to join", true],
+  ["a workspace to join", false],
+]) {
+  test(`the workspace intro waits for the Join your team check (${answer})`, async (t) => {
+    let respond;
+    globalThis.__listJoinable = () => new Promise((resolve) => (respond = resolve));
+    t.after(() => {
+      delete globalThis.__listJoinable;
+    });
+    const { modals, render } = await setup(t);
+
+    await render(React.createElement(modals.joinCheck));
+    assert.equal(globalThis.__intro.open, false);
+
+    await React.act(async () => respond(introOpen ? [] : JOINABLE));
+    assert.equal(globalThis.__intro.open, introOpen);
   });
 }
 

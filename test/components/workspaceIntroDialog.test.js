@@ -125,3 +125,13 @@ test("dismissing the dialog finishes the intro for its workspace", async (t) => 
   assert.deepEqual(finished, ["acme"]);
   assert.equal(renderDialog({ open: false }), "");
 });
+
+test("Next and Get started take the first focus, not Skip", async (t) => {
+  const { renderCard } = await loadIntro(t);
+  const focused = (markup) => markup.match(/<button[^>]*autofocus=""[^>]*>([^<]*)/g) ?? [];
+
+  const first = focused(renderCard({ step: 0 }));
+  assert.equal(first.length, 1);
+  assert.match(first[0], /common\.next/);
+  assert.match(focused(renderCard({ step: 2 }))[0], /workspaces\.intro\.getStarted/);
+});

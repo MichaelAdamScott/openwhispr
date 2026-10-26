@@ -9,8 +9,11 @@ export type GatedModal =
   | "notesStructureIntro"
   | "notesStructureIntroPending"
   | "invitation"
+  | "notesHandOff"
   | "joinYourTeam"
-  | "postMigration";
+  | "joinYourTeamPending"
+  | "postMigration"
+  | "postMigrationPending";
 
 interface ModalGateState {
   // A count per modal, since the same modal can be mounted in two places at once.

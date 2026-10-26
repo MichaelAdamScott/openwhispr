@@ -129,6 +129,9 @@ interface PersonalNotesViewProps {
   onMeetingRecordingRequestHandled?: () => void;
   invitationEntry?: { workspaceId: string; teamIds: string[]; spaceIds: string[] } | null;
   onInvitationEntryHandled?: () => void;
+  /** ControlPanel holds the workspace intro until this view has mounted after a join. */
+  notesHandOff?: boolean;
+  onNotesHandOffDone?: () => void;
 }
 
 // The list's CSS cap: 30% of the view it shares with the note.
@@ -143,6 +146,8 @@ export default function PersonalNotesView({
   onMeetingRecordingRequestHandled,
   invitationEntry,
   onInvitationEntryHandled,
+  notesHandOff = false,
+  onNotesHandOffDone,
 }: PersonalNotesViewProps) {
   const isMeetingMode = useIsMeetingMode();
   const isNarrowWindow = useIsNarrowWindow();
@@ -314,18 +319,31 @@ export default function PersonalNotesView({
     isSignedIn &&
     teamSpacesAvailable &&
     !isSidePanelLayout;
-  useModalGate("notesStructureIntroPending", structureIntroDue);
+  // Arriving via an accepted invitation reopens the structure intro even when
+  // this device has already seen it, and even before notes onboarding is done
+  // (the dialog also renders in the onboarding branch below). It opens once per
+  // invitation, when no side panel is in the way, and holds the gate until then.
+  const [invitationIntroShownFor, setInvitationIntroShownFor] =
+    useState<PersonalNotesViewProps["invitationEntry"]>(null);
+  const invitationIntroDue =
+    invitationEntry != null && !isSidePanelLayout && invitationIntroShownFor !== invitationEntry;
+  useModalGate("notesStructureIntroPending", structureIntroDue || invitationIntroDue);
 
   useEffect(() => {
     if (structureIntroDue && !isTreeLoading) setShowStructureIntro(true);
   }, [structureIntroDue, isTreeLoading]);
 
-  // Arriving via an accepted invitation reopens the structure intro even when
-  // this device has already seen it, and even before notes onboarding is done
-  // (the dialog also renders in the onboarding branch below).
   useEffect(() => {
-    if (invitationEntry && !isSidePanelLayout) setShowStructureIntro(true);
-  }, [invitationEntry, isSidePanelLayout]);
+    if (!invitationIntroDue) return;
+    setShowStructureIntro(true);
+    setInvitationIntroShownFor(invitationEntry);
+  }, [invitationIntroDue, invitationEntry]);
+
+  // Releases ControlPanel's hand-off gate in the same render that opens the structure intro just
+  // above; a due intro already holds its own gate, so the workspace intro never slips in between.
+  useEffect(() => {
+    if (notesHandOff) onNotesHandOffDone?.();
+  }, [notesHandOff, onNotesHandOffDone]);
 
   // The acceptance modal starts a sync before navigating here. Once the first
   // space the invitation granted (directly or via a team) appears in the local

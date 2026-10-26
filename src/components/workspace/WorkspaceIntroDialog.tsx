@@ -196,8 +196,10 @@ export function WorkspaceIntroCard({
                 {t("common.skip")}
               </button>
             )}
+            {/* Radix would focus Skip, the first control, so a stray Enter would end the tour. */}
             <button
               type="button"
+              autoFocus
               onClick={isLast ? onFinish : onNext}
               className={cn(
                 PILL_BUTTON,

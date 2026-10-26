@@ -125,6 +125,8 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
   const [showSettings, setShowSettings] = useState(!!initialSettingsSection);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [showPostMigration, setShowPostMigration] = useState(false);
+  const [postMigrationChecked, setPostMigrationChecked] = useState(platform !== "darwin");
+  useModalGate("postMigrationPending", !postMigrationChecked);
   const [limitData, setLimitData] = useState<{ wordsUsed: number; limit: number } | null>(null);
   const hasShownUpgradePrompt = useRef(false);
   const [settingsSection, setSettingsSection] = useState<string | undefined>(
@@ -146,12 +148,12 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
   const [showSearch, setShowSearch] = useState(false);
   const showDiscarded = useShowDiscarded();
   const [activeView, setActiveView] = useState<ControlPanelView>("home");
-  // An accepted invitation routes to Notes, which opens the structure intro there; the gate
-  // holds from the invitation modal through that hand-off (Notes is lazy, so it can mount late).
-  useModalGate(
-    "invitation",
-    invitationToken !== null || (invitationNotesEntry !== null && activeView === "personal-notes")
-  );
+  useModalGate("invitation", invitationToken !== null);
+  // Accepting an invitation or joining a workspace routes to Notes, which may open its structure
+  // intro. Notes is lazy, so it can mount late; this holds the gate until it has taken over.
+  const [notesHandOff, setNotesHandOff] = useState(false);
+  const finishNotesHandOff = useCallback(() => setNotesHandOff(false), []);
+  useModalGate("notesHandOff", notesHandOff && activeView === "personal-notes");
   const [integrationsSection, setIntegrationsSection] = useState<IntegrationsSection>(
     DEFAULT_INTEGRATIONS_SECTION
   );
@@ -187,9 +189,11 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
   // Suppressed while a deep-linked invitation is open so the two never stack.
   const {
     joinable,
+    pending: joinablePending,
     dismiss: dismissJoinable,
     markRequested,
   } = useJoinableWorkspaces(user?.id ?? null, isSignedIn && !invitationToken);
+  useModalGate("joinYourTeamPending", joinablePending);
   const usage = useUsage();
   const upsell = decideUpsell({
     authLoaded,
@@ -294,9 +298,16 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
 
   useEffect(() => {
     if (platform !== "darwin") return;
-    window.electronAPI?.getPostMigrationState?.().then((state) => {
-      if (state?.justMigrated) setShowPostMigration(true);
-    });
+    const check = window.electronAPI?.getPostMigrationState?.();
+    if (!check) {
+      setPostMigrationChecked(true);
+      return;
+    }
+    check
+      .then((state) => {
+        if (state?.justMigrated) setShowPostMigration(true);
+      })
+      .finally(() => setPostMigrationChecked(true));
   }, []);
 
   const dismissPostMigrationPermanently = useCallback(async () => {
@@ -993,6 +1004,7 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
         onClose={() => setInvitationToken(null)}
         onAccepted={(entry) => {
           setInvitationNotesEntry(entry);
+          setNotesHandOff(true);
           setActiveView("personal-notes");
         }}
       />
@@ -1002,7 +1014,10 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
         domain={user?.email?.split("@")[1] ?? null}
         onDismiss={dismissJoinable}
         onRequested={markRequested}
-        onJoined={() => setActiveView("personal-notes")}
+        onJoined={() => {
+          setNotesHandOff(true);
+          setActiveView("personal-notes");
+        }}
       />
 
       {/* Always mounted so the palette chunk is warm and Radix can play its exit animation. */}
@@ -1060,7 +1075,8 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
             isOverLimit={usage?.isOverLimit ?? false}
             isSignedIn={isSignedIn}
             upsell={upsell}
-            workspaceIntroAllowed={!showSettings}
+            // The side-panel layout (a meeting, or a narrow window with a note open) has no room for it.
+            workspaceIntroAllowed={!showSettings && !isSidePanelLayout}
             updateAction={
               !updateStatus.isDevelopment &&
               (updateStatus.updateAvailable ||
@@ -1267,6 +1283,8 @@ export default function ControlPanel({ initialSettingsSection }: ControlPanelPro
                     onMeetingRecordingRequestHandled={handleMeetingRecordingRequestHandled}
                     invitationEntry={invitationNotesEntry}
                     onInvitationEntryHandled={() => setInvitationNotesEntry(null)}
+                    notesHandOff={notesHandOff}
+                    onNotesHandOffDone={finishNotesHandOff}
                   />
                 </Suspense>
               )}
