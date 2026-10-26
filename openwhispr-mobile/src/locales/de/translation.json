@@ -180,6 +180,7 @@
     "downloadBusy": "Dieses Modell wird bereits heruntergeladen.",
     "downloadStorage": "Schaffe Speicherplatz, bevor du dieses Modell herunterlädst.",
     "downloadCancelled": "Download abgebrochen.",
+    "downloadConnection": "Der Modell-Download wurde unterbrochen. Prüfe deine Verbindung und versuche es erneut.",
     "downloadFailed": "Download fehlgeschlagen ({{status}}). Versuche es erneut.",
     "downloadVerification": "Modellprüfung fehlgeschlagen. Starte den Download erneut.",
     "generationCancelled": "Generierung abgebrochen.",

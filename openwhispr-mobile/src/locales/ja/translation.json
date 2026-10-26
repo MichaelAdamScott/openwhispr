@@ -180,6 +180,7 @@
     "downloadBusy": "このモデルはダウンロード中です。",
     "downloadStorage": "このモデルをダウンロードする前に、保存容量を空けてください。",
     "downloadCancelled": "ダウンロードをキャンセルしました。",
+    "downloadConnection": "モデルのダウンロードが中断されました。接続を確認して、もう一度お試しください。",
     "downloadFailed": "ダウンロードに失敗しました（{{status}}）。もう一度お試しください。",
     "downloadVerification": "モデルの検証に失敗しました。もう一度ダウンロードしてください。",
     "generationCancelled": "生成をキャンセルしました。",

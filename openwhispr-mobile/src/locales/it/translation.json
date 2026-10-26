@@ -180,6 +180,7 @@
     "downloadBusy": "Questo modello è già in fase di download.",
     "downloadStorage": "Libera spazio prima di scaricare questo modello.",
     "downloadCancelled": "Download annullato.",
+    "downloadConnection": "Il download del modello è stato interrotto. Controlla la connessione e riprova.",
     "downloadFailed": "Download non riuscito ({{status}}). Riprova.",
     "downloadVerification": "Verifica del modello non riuscita. Riprova il download.",
     "generationCancelled": "Generazione annullata.",

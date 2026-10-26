@@ -180,6 +180,7 @@
     "downloadBusy": "Este modelo ya se está descargando.",
     "downloadStorage": "Libera espacio antes de descargar este modelo.",
     "downloadCancelled": "Descarga cancelada.",
+    "downloadConnection": "La descarga del modelo se interrumpió. Comprueba tu conexión y vuelve a intentarlo.",
     "downloadFailed": "La descarga ha fallado ({{status}}). Inténtalo de nuevo.",
     "downloadVerification": "No se ha podido verificar el modelo. Repite la descarga.",
     "generationCancelled": "Generación cancelada.",

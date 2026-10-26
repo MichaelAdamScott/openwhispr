@@ -180,6 +180,7 @@
     "downloadBusy": "يجري تنزيل هذا النموذج بالفعل.",
     "downloadStorage": "أفرغ بعض مساحة التخزين قبل تنزيل هذا النموذج.",
     "downloadCancelled": "تم إلغاء التنزيل.",
+    "downloadConnection": "انقطع تنزيل النموذج. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.",
     "downloadFailed": "فشل التنزيل ({{status}}). حاول مجددًا.",
     "downloadVerification": "فشل التحقق من النموذج. أعد محاولة التنزيل.",
     "generationCancelled": "تم إلغاء الإنشاء.",

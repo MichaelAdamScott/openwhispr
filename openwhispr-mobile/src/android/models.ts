@@ -144,7 +144,17 @@ export async function downloadAndroidModel(
             Math.min(0.98, (completed + event.totalBytesWritten) / ANDROID_MODELS[id].bytes),
           ),
         );
-        const response = await job.download.downloadAsync();
+        const response = await job.download.downloadAsync().catch((error: unknown) => {
+          if (job.cancelled) throw new Error(i18n.t('downloadCancelled'));
+          if (
+            error instanceof Error &&
+            /connection abort|connection reset|failed to connect|unable to resolve host|network is unreachable|network request failed|sockettimeout|timed out/i.test(
+              error.message,
+            )
+          )
+            throw new Error(i18n.t('downloadConnection'));
+          throw error;
+        });
         if (job.cancelled || !response) throw new Error(i18n.t('downloadCancelled'));
         if (response.status !== 200)
           throw new Error(i18n.t('downloadFailed', { status: response.status }));

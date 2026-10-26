@@ -180,6 +180,7 @@
     "downloadBusy": "此模型正在下載。",
     "downloadStorage": "下載此模型前，請釋出一些儲存空間。",
     "downloadCancelled": "下載已取消。",
+    "downloadConnection": "模型下載已中斷。請檢查網路連線後重試。",
     "downloadFailed": "下載失敗（{{status}}）。請重試。",
     "downloadVerification": "模型驗證失敗。請重新下載。",
     "generationCancelled": "產生已取消。",
