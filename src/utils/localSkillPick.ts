@@ -1,11 +1,11 @@
 import type { SkillSummary } from "../types/skills";
 
-/** The lowest score a skill needs to be picked; a tie for the top picks nothing. */
-export const LOCAL_SKILL_PICK_MIN_SCORE = 2;
+/** The fewest words a request must share with a skill to pick it; a tie for the top picks nothing. */
+const LOCAL_SKILL_PICK_MIN_WORDS = 2;
 
 // Words that say nothing about a task. Latin words of one or two letters are left out by length
 // instead ("es", "de", "la", "my"), so these are the longer ones, in English and in the other
-// languages the app speaks with Latin letters.
+// languages the app speaks that put spaces between words.
 const STOPWORDS = new Set([
   // English
   "and",
@@ -104,6 +104,36 @@ const STOPWORDS = new Set([
   "bitte",
   "auf",
   "aus",
+  "ich",
+  "wir",
+  "nicht",
+  "haben",
+  "dieser",
+  "diese",
+  "dieses",
+  // Russian
+  "что",
+  "это",
+  "как",
+  "для",
+  "мой",
+  "моя",
+  "мне",
+  "меня",
+  "этот",
+  "эта",
+  "эти",
+  // Arabic
+  "هذا",
+  "هذه",
+  "ذلك",
+  "التي",
+  "الذي",
+  "على",
+  "إلى",
+  "كيف",
+  "ماذا",
+  "متى",
 ]);
 // One Chinese, Japanese or Korean character is a word on its own.
 const CJK = /\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul}/u;
@@ -126,7 +156,9 @@ function terms(text: string): Set<string> {
 
 /**
  * For a model that can't call tools: the one skill whose words the request shares most. A
- * word in the skill's name counts 2, one in its description 1.
+ * word in the skill's name counts 2, one in its description 1. A pick needs two shared words:
+ * one word ("is Slack down", "what is Linear") names a topic, not the skill, and a pick stays
+ * with the chat once made.
  */
 export function pickSkillForRequest(request: string, skills: SkillSummary[]): SkillSummary | null {
   const wanted = terms(request);
@@ -135,13 +167,16 @@ export function pickSkillForRequest(request: string, skills: SkillSummary[]): Sk
       const nameTerms = terms(`${skill.displayName} ${skill.name.replace(/-/g, " ")}`);
       const descriptionTerms = terms(skill.description);
       let score = 0;
+      let words = 0;
       for (const word of wanted) {
-        score += nameTerms.has(word) ? 2 : descriptionTerms.has(word) ? 1 : 0;
+        const weight = nameTerms.has(word) ? 2 : descriptionTerms.has(word) ? 1 : 0;
+        score += weight;
+        if (weight > 0) words += 1;
       }
-      return { skill, score };
+      return { skill, score, words };
     })
     .sort((a, b) => b.score - a.score);
   const [best, next] = ranked;
-  if (!best || best.score < LOCAL_SKILL_PICK_MIN_SCORE) return null;
+  if (!best || best.words < LOCAL_SKILL_PICK_MIN_WORDS) return null;
   return next && next.score === best.score ? null : best.skill;
 }
