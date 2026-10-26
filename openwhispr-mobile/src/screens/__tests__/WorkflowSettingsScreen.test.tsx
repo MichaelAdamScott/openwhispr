@@ -1661,3 +1661,148 @@ it('localizes Android provider controls without changing an unsaved endpoint, mo
     });
   }
 });
+
+describe('Arabic workflow guidance and diagnostics', () => {
+  const originalOS = Platform.OS;
+  beforeEach(async () => {
+    Platform.OS = 'android';
+    await workflowI18n.changeLanguage('ar');
+    mockScope = 'notes';
+    mockConfig = {
+      inference: {
+        notes: {
+          mode: 'providers',
+          providerId: 'custom',
+          endpoint: 'https://provider.example/v1',
+          modelId: 'model-1',
+        },
+      },
+    };
+  });
+  afterEach(async () => {
+    Platform.OS = originalOS;
+    await act(async () => {
+      await workflowI18n.changeLanguage('en');
+    });
+  });
+
+  it('explains invalid endpoint input in Arabic before writing a credential', async () => {
+    render(<WorkflowSettingsScreen />);
+    await act(async () => undefined);
+    fireEvent.changeText(screen.getByLabelText('عنوان URL للخادم'), 'http://public.example/v1');
+    fireEvent.changeText(screen.getByLabelText('مفتاح API'), 'synthetic-key');
+    fireEvent.press(screen.getByText('حفظ'));
+    expect(await screen.findByTestId('toast-error')).toHaveTextContent(
+      'استخدم HTTPS، أو HTTP لخادم على شبكة خاصة.',
+    );
+    expect(mockSetCredential).not.toHaveBeenCalled();
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('keeps Local Mode restrictions intact while translating their explanation', async () => {
+    mockScope = 'upload';
+    mockActiveMode = 'private';
+    mockConfig = { defaultMode: 'private', inference: { upload: { mode: 'openwhispr' } } };
+    // This mixed-platform suite loads the module on iOS. Supply the Android-only note
+    // that a native Android bundle creates when it first imports aiWorkflows.
+    const { ON_DEVICE_MODE_NOTES } = require('@/lib/aiWorkflows');
+    const originalNote = ON_DEVICE_MODE_NOTES.upload;
+    ON_DEVICE_MODE_NOTES.upload = 'Local Mode keeps uploads on this phone.';
+    try {
+      render(<WorkflowSettingsScreen />);
+      await act(async () => undefined);
+      expect(screen.getByText(/يبقي الوضع المحلي الملفات المرفوعة على هذا الهاتف/)).toBeTruthy();
+      expect(
+        screen.getAllByText('متوقف أثناء تشغيل الوضع المحلي. أوقفه من النماذج والمعالجة.'),
+      ).toHaveLength(2);
+      fireEvent.press(screen.getByText('OpenWhispr Cloud'));
+      expect(mockSwitchMode).not.toHaveBeenCalled();
+      expect(mockUpdateConfig).not.toHaveBeenCalled();
+    } finally {
+      if (originalNote === undefined) delete ON_DEVICE_MODE_NOTES.upload;
+      else ON_DEVICE_MODE_NOTES.upload = originalNote;
+    }
+  });
+
+  it('translates a provider rejection without displaying raw failure details or saving the key', async () => {
+    const { ProviderExecutionError } = require('@/services/providers/ProviderExecution');
+    mockTestConnection.mockRejectedValueOnce(
+      Object.assign(new ProviderExecutionError('synthetic-private-detail'), {
+        code: 'INVALID_CREDENTIAL',
+      }),
+    );
+    render(<WorkflowSettingsScreen />);
+    await act(async () => undefined);
+    fireEvent.changeText(screen.getByLabelText('مفتاح API'), 'synthetic-unsaved-key');
+    fireEvent.press(screen.getByText('التحقق من الاتصال'));
+    expect(await screen.findByTestId('toast-error')).toHaveTextContent(
+      'رفض موفّر الخدمة المفتاح. تحقّق منه وحاول مجددًا.',
+    );
+    expect(screen.queryByText('synthetic-private-detail')).toBeNull();
+    expect(screen.getByLabelText('مفتاح API').props.value).toBe('synthetic-unsaved-key');
+    expect(mockSetCredential).not.toHaveBeenCalled();
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['PROVIDER_REQUEST_FAILED', 418, 'رفض الموفّر الطلب (418).'],
+    [
+      'PROVIDER_REQUEST_FAILED',
+      undefined,
+      'تعذّر فحص هذا الموفّر. تحقّق من نقطة الاتصال والاتصال بالشبكة، ثم حاول مجددًا.',
+    ],
+    [
+      'UNRECOGNIZED_FAILURE',
+      undefined,
+      'تعذّر فحص هذا الموفّر. تحقّق من نقطة الاتصال والاتصال بالشبكة، ثم حاول مجددًا.',
+    ],
+  ])('safely explains %s with status %s', async (code, status, message) => {
+    const { ProviderExecutionError } = require('@/services/providers/ProviderExecution');
+    mockTestConnection.mockRejectedValueOnce(
+      Object.assign(new ProviderExecutionError('synthetic-private-detail'), { code, status }),
+    );
+    render(<WorkflowSettingsScreen />);
+    await act(async () => undefined);
+    fireEvent.press(screen.getByText('التحقق من الاتصال'));
+    expect(await screen.findByTestId('toast-error')).toHaveTextContent(message as string);
+    expect(screen.queryByText(/synthetic-private-detail|undefined/)).toBeNull();
+  });
+
+  it('retains iOS provider diagnostics while the selected app language is Arabic', async () => {
+    Platform.OS = 'ios';
+    const { ProviderExecutionError } = require('@/services/providers/ProviderExecution');
+    mockTestConnection.mockRejectedValueOnce(
+      Object.assign(new ProviderExecutionError('Original iOS diagnostic'), {
+        code: 'INVALID_CREDENTIAL',
+      }),
+    );
+    render(<WorkflowSettingsScreen />);
+    await act(async () => undefined);
+    fireEvent.press(screen.getByText('Check Connection'));
+    expect(await screen.findByTestId('toast-error')).toHaveTextContent('Original iOS diagnostic');
+  });
+
+  it('localizes both discard actions and only leaves after the destructive action', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    try {
+      render(<WorkflowSettingsScreen />);
+      await act(async () => undefined);
+      fireEvent.changeText(screen.getByLabelText('مفتاح API'), 'synthetic-unsaved-key');
+      const [prevent, onPreventRemove] = mockPreventRemove.mock.calls.at(-1);
+      expect(prevent).toBe(true);
+      onPreventRemove({ data: { action: { type: 'GO_BACK' } } });
+      expect(alert.mock.calls[0][0]).toBe('تجاهل التغييرات غير المحفوظة؟');
+      const buttons = alert.mock.calls[0][2] ?? [];
+      expect(buttons.map((button) => button.text)).toEqual(['إلغاء', 'تجاهل']);
+      buttons.find((button) => button.style === 'cancel')?.onPress?.();
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('مفتاح API').props.value).toBe('synthetic-unsaved-key');
+      buttons.find((button) => button.style === 'destructive')?.onPress?.();
+      expect(mockDispatch).toHaveBeenCalledWith({ type: 'GO_BACK' });
+      expect(mockSetCredential).not.toHaveBeenCalled();
+      expect(mockUpdateConfig).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
+  });
+});

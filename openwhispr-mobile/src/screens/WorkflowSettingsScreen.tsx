@@ -104,6 +104,26 @@ const PROVIDER_SETUP_URLS: Record<string, string> = {
   groq: 'https://console.groq.com/keys',
   openrouter: 'https://openrouter.ai/keys',
 };
+const PROVIDER_FAILURE_COPY: Readonly<Partial<Record<string, string>>> = {
+  INVALID_CREDENTIAL: 'invalidCredential',
+  PROVIDER_QUOTA_EXCEEDED: 'quotaProblem',
+  MODEL_NOT_FOUND: 'modelNotFound',
+  PROVIDER_RATE_LIMITED: 'rateLimited',
+  PROVIDER_UNAVAILABLE: 'providerUnavailable',
+  PROVIDER_REQUEST_FAILED: 'providerRequestFailed',
+  PROVIDER_UNSUPPORTED: 'providerUnsupported',
+  ENDPOINT_INVALID: 'endpointInvalid',
+  CREDENTIAL_MISSING: 'credentialNeeded',
+  CREDENTIAL_MISMATCH: 'credentialMismatch',
+  REDIRECT_BLOCKED: 'redirectBlocked',
+  PROVIDER_CERTIFICATE_UNTRUSTED: 'certificateUntrusted',
+  PROVIDER_TIMED_OUT: 'providerTimeout',
+  PROVIDER_LOCAL_NETWORK_ERROR: 'localNetwork',
+  PROVIDER_NETWORK_ERROR: 'providerNetwork',
+  PROVIDER_TRANSPORT_UNAVAILABLE: 'updateApp',
+  PROVIDER_RESPONSE_INVALID: 'invalidResponse',
+  PROVIDER_RESPONSE_TRUNCATED: 'truncatedResponse',
+};
 
 function SectionFooter({ children }: { children: string }): React.JSX.Element {
   return (
@@ -170,27 +190,38 @@ function WorkflowSwitchCard({
 }
 
 function CleanupSettings({ enabled }: { enabled: boolean }): React.JSX.Element {
+  const { copy } = useAndroidCopy();
   const toggleCleanup = useConfigToggle('cleanupEnabled');
   const hasCustomPrompt = useCustomPromptsStore(
     (state) => resolveCustomPrompt(state.customPrompts.cleanup) !== undefined,
   );
   return (
     <WorkflowSwitchCard
-      title="Enable Text Cleanup"
-      label="Text Cleanup"
-      description="Use AI to remove filler words, fix grammar, and polish punctuation."
+      title={copy('workflowSettings.enableCleanup', 'Enable Text Cleanup')}
+      label={copy('workflowSettings.cleanup', 'Text Cleanup')}
+      description={copy(
+        'workflowSettings.cleanupBody',
+        'Use AI to remove filler words, fix grammar, and polish punctuation.',
+      )}
       icon="sparkles"
       mdIcon="Sparkles"
       enabled={enabled}
       onToggle={toggleCleanup}
-      offNote="Dictation is inserted as spoken, with no AI cleanup."
+      offNote={copy(
+        'workflowSettings.cleanupOff',
+        'Dictation is inserted as spoken, with no AI cleanup.',
+      )}
     >
       <SettingsRow
         iconStyle="line"
         icon="text.quote"
         mdIcon="TextQuote"
-        title="Cleanup Prompt"
-        subtitle={hasCustomPrompt ? 'Custom' : 'Default'}
+        title={copy('workflowSettings.cleanupPrompt', 'Cleanup Prompt')}
+        subtitle={
+          hasCustomPrompt
+            ? copy('workflowSettings.customPrompt', 'Custom')
+            : copy('workflowSettings.defaultPrompt', 'Default')
+        }
         onPress={() => router.push('/(account)/cleanup-prompt')}
       />
     </WorkflowSwitchCard>
@@ -198,22 +229,30 @@ function CleanupSettings({ enabled }: { enabled: boolean }): React.JSX.Element {
 }
 
 function NoteChatSettings({ enabled }: { enabled: boolean }): React.JSX.Element {
+  const { copy } = useAndroidCopy();
   const toggleNoteChat = useConfigToggle('noteChatEnabled');
   return (
     <WorkflowSwitchCard
-      title="Enable Note Chat"
-      label="Note Chat"
-      description="Ask questions about your notes and get answers from them."
+      title={copy('workflowSettings.enableNoteChat', 'Enable Note Chat')}
+      label={copy('workflowSettings.noteChat', 'Note Chat')}
+      description={copy(
+        'workflowSettings.noteChatBody',
+        'Ask questions about your notes and get answers from them.',
+      )}
       icon="bubble.left.and.bubble.right"
       mdIcon="MessagesSquare"
       enabled={enabled}
       onToggle={toggleNoteChat}
-      offNote="Notes don’t offer Ask about this note while note chat is off."
+      offNote={copy(
+        'workflowSettings.noteChatOff',
+        'Notes don’t offer Ask about this note while note chat is off.',
+      )}
     />
   );
 }
 
 function VoiceAssistantSettings({ enabled }: { enabled: boolean }): React.JSX.Element {
+  const { copy } = useAndroidCopy();
   const updateConfig = useConfigStore((state) => state.updateConfig);
   const agentName = useConfigStore((state) =>
     state.config ? getDictationAgentName(state.config) : undefined,
@@ -223,12 +262,15 @@ function VoiceAssistantSettings({ enabled }: { enabled: boolean }): React.JSX.El
   );
   return (
     <WorkflowSwitchCard
-      title="Enable Voice Assistant"
-      label="Voice Assistant"
+      title={copy('workflowSettings.enableAgent', 'Enable Voice Assistant')}
+      label={copy('workflowSettings.agent', 'Voice Assistant')}
       description={
         privateMode
-          ? PRIVATE_MODE_LOCKED_REASON
-          : 'Tap the wand on the OpenWhispr keyboard and say what to write.'
+          ? copy('workflowSettings.localLocked', PRIVATE_MODE_LOCKED_REASON)
+          : copy(
+              'workflowSettings.agentBody',
+              'Tap the wand on the OpenWhispr keyboard and say what to write.',
+            )
       }
       icon="person.wave.2"
       mdIcon="UserRoundCog"
@@ -238,13 +280,13 @@ function VoiceAssistantSettings({ enabled }: { enabled: boolean }): React.JSX.El
         safeHaptics('light');
         void updateConfig({ dictationAgentEnabled: value });
       }}
-      offNote="The OpenWhispr keyboard shows no wand."
+      offNote={copy('workflowSettings.agentOff', 'The OpenWhispr keyboard shows no wand.')}
     >
       <SettingsRow
         iconStyle="line"
         icon="slider.horizontal.3"
         mdIcon="SlidersHorizontal"
-        title="Voice Assistant Settings"
+        title={copy('workflowSettings.agentSettings', 'Voice Assistant Settings')}
         subtitle={agentName}
         onPress={() => router.push('/(account)/dictation-agent')}
       />
@@ -383,12 +425,18 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
     };
   }, [speechScope]);
   const onDeviceUnsupported = isLocalReasoningUnsupported(appleIntelligence)
-    ? getLocalReasoningUnavailableMessage(appleIntelligence ?? undefined)
+    ? copy(
+        'workflowSettings.localModelNeeded',
+        getLocalReasoningUnavailableMessage(appleIntelligence ?? undefined),
+      )
     : null;
   const onDeviceStatus =
     Platform.OS === 'android'
       ? appleIntelligence && appleIntelligence.status !== 'ready'
-        ? getLocalReasoningUnavailableMessage(appleIntelligence)
+        ? copy(
+            'workflowSettings.localModelNeeded',
+            getLocalReasoningUnavailableMessage(appleIntelligence),
+          )
         : undefined
       : appleIntelligence?.status === 'unsupportedLanguage'
         ? getLocalReasoningLanguageNote(appleIntelligence)
@@ -396,24 +444,35 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
   // Nothing is shown as picked when the On-Device text workflow can never run on this iPhone.
   const pickedMode =
     !speechScope && onDeviceUnsupported && selection.mode === 'local' ? null : selection.mode;
+  const localNote = ON_DEVICE_MODE_NOTES[scope]
+    ? copy(`workflowSettings.localMode_${scope}`, ON_DEVICE_MODE_NOTES[scope])
+    : undefined;
+  const storedModeLabel = copy(
+    `workflowSettings.${storedSelection.mode === 'providers' ? 'byok' : storedSelection.mode === 'openwhispr' ? 'cloud' : 'local'}`,
+    MODE_LABELS[storedSelection.mode],
+  );
   const modeNote =
     (Platform.OS === 'ios' && onDeviceWanted && !speechScope
       ? 'Switches to On-Device once Apple Intelligence is ready, while this page stays open.'
       : undefined) ??
     (scope === 'cleanup' && selection.mode === 'local' && onDeviceUnsupported
-      ? ON_DEVICE_CLEANUP_UNSUPPORTED_NOTE
+      ? copy('workflowSettings.localUnavailable', ON_DEVICE_CLEANUP_UNSUPPORTED_NOTE)
       : undefined) ??
     (Platform.OS === 'android' && lockedByPrivateMode && ON_DEVICE_MODE_NOTES[scope]
-      ? `${ON_DEVICE_MODE_NOTES[scope]} Your ${MODE_LABELS[storedSelection.mode]} choice applies again when Local Mode is off.`
+      ? copy(
+          'workflowSettings.modeRestored',
+          `${ON_DEVICE_MODE_NOTES[scope]} Your ${MODE_LABELS[storedSelection.mode]} choice applies again when Local Mode is off.`,
+          { note: localNote, mode: storedModeLabel },
+        )
       : undefined) ??
     (scope === 'cleanup' &&
     selection.mode === 'openwhispr' &&
     cloudCleanupNeedsAccount(config, activeMode, cloudAccess)
       ? CLOUD_CLEANUP_NEEDS_ACCOUNT_NOTE
       : undefined) ??
-    (activeMode === 'private' ? ON_DEVICE_MODE_NOTES[scope] : undefined) ??
-    (activeMode === 'providers' && !config?.inference?.[scope]
-      ? UNSET_PROVIDER_NOTES[scope]
+    (activeMode === 'private' ? localNote : undefined) ??
+    (activeMode === 'providers' && !config?.inference?.[scope] && UNSET_PROVIDER_NOTES[scope]
+      ? copy(`workflowSettings.unsaved_${scope}`, UNSET_PROVIDER_NOTES[scope])
       : undefined) ??
     (selection.mode === 'providers' && savedSelection.mode !== 'providers'
       ? activeMode === 'private' && scope === 'dictation'
@@ -424,7 +483,12 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         : copy('workflowSettings.switchProvider', 'Save to switch to Bring Your Own Key.')
       : undefined) ??
     (scope === 'dictation'
-      ? LOCAL_MODE_DICTATION_NOTES[activeMode === 'private' ? 'on' : 'off']
+      ? copy(
+          activeMode === 'private'
+            ? 'workflowSettings.localDictationOn'
+            : 'workflowSettings.localDictationOff',
+          LOCAL_MODE_DICTATION_NOTES[activeMode === 'private' ? 'on' : 'off'],
+        )
       : undefined);
   const modeUnavailable: Partial<Record<InferenceMode, string>> = {
     ...(onDeviceUnsupported ? { local: onDeviceUnsupported } : {}),
@@ -432,7 +496,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
       ? Object.fromEntries(
           (ANDROID_LOCAL_MODE_LOCKED[scope] ?? []).map((mode) => [
             mode,
-            PRIVATE_MODE_LOCKED_REASON,
+            copy('workflowSettings.localLocked', PRIVATE_MODE_LOCKED_REASON),
           ]),
         )
       : {}),
@@ -488,10 +552,16 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
   const canSave = hasUnsavedChanges && !busy;
   usePreventRemove(hasUnsavedChanges, ({ data }) =>
     confirmDestructive(
-      'Discard unsaved changes?',
-      'Your selection and any key you entered have not been saved.',
+      copy('workflowSettings.discardTitle', 'Discard unsaved changes?'),
+      copy(
+        'workflowSettings.discardBody',
+        'Your selection and any key you entered have not been saved.',
+      ),
       () => navigation.dispatch(data.action),
-      { destructiveLabel: 'Discard' },
+      {
+        destructiveLabel: copy('workflowSettings.discardAction', 'Discard'),
+        cancelLabel: copy('cancel', 'Cancel'),
+      },
     ),
   );
 
@@ -559,7 +629,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         setOnDeviceWanted(false);
         if (result !== 'switched') return;
         setSelection(useConfigStore.getState().config?.inference?.[scope] ?? { mode: 'local' });
-        showToast('Switched to On-Device.', 'success');
+        showToast(copy('workflowSettings.switchedLocal', 'Switched to On-Device.'), 'success');
       };
       const check = (): void => {
         finishWhenReady().catch(() => undefined);
@@ -579,7 +649,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         appStateSubscription.remove();
         clearInterval(poll);
       };
-    }, [onDeviceWanted, scope, speechScope, showToast]),
+    }, [onDeviceWanted, scope, speechScope, showToast, copy]),
   );
 
   async function chooseMode(mode: InferenceMode): Promise<void> {
@@ -638,7 +708,9 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
     let saved: InferenceSelection = { mode: selection.mode };
     if (selection.mode === 'providers') {
       if (!provider || (requireModel && !modelId.trim())) {
-        onInvalid('Choose a provider and enter a model ID.');
+        onInvalid(
+          copy('workflowSettings.chooseProviderModel', 'Choose a provider and enter a model ID.'),
+        );
         return null;
       }
       const endpoint = normalizeBaseUrl(
@@ -646,12 +718,22 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
       );
       if (provider.id === 'custom') {
         if (!isSecureHttpEndpoint(endpoint)) {
-          onInvalid('Use HTTPS, or HTTP for a private-network host.');
+          onInvalid(
+            copy(
+              'workflowSettings.secureEndpoint',
+              'Use HTTPS, or HTTP for a private-network host.',
+            ),
+          );
           return null;
         }
         const parsed = new URL(endpoint);
         if (parsed.username || parsed.password || parsed.search || parsed.hash) {
-          onInvalid('Remove credentials, query parameters, and fragments from the endpoint URL.');
+          onInvalid(
+            copy(
+              'workflowSettings.endpointParts',
+              'Remove credentials, query parameters, and fragments from the endpoint URL.',
+            ),
+          );
           return null;
         }
       }
@@ -670,7 +752,9 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         setConfigured(true);
       }
       if (provider.id !== 'custom' && !hasCredential) {
-        onInvalid('Enter a credential for this provider.');
+        onInvalid(
+          copy('workflowSettings.credentialNeeded', 'Enter a credential for this provider.'),
+        );
         return null;
       }
       saved = {
@@ -715,7 +799,12 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         workflowSaveConfig(useConfigStore.getState().config, scope, saved, activeMode, cloudAccess),
       );
       if (useConfigStore.getState().error) {
-        showError('Unable to save your selection. Please try again.');
+        showError(
+          copy(
+            'workflowSettings.saveSelectionFailed',
+            'Unable to save your selection. Please try again.',
+          ),
+        );
         return;
       }
       if (scope === 'dictation') setActiveMode('providers', true);
@@ -723,14 +812,26 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
       clearInputs();
       showToast(
         !enteredKey
-          ? 'Saved.'
+          ? copy('workflowSettings.savedPlain', 'Saved.')
           : provider?.id === 'custom'
-            ? 'Saved. Every workflow using this server uses this key.'
-            : `Saved. Every workflow set to ${keyOwner} uses this key.`,
+            ? copy(
+                'workflowSettings.savedServer',
+                'Saved. Every workflow using this server uses this key.',
+              )
+            : copy(
+                'workflowSettings.savedProvider',
+                `Saved. Every workflow set to ${keyOwner} uses this key.`,
+                { provider: keyOwner },
+              ),
         'success',
       );
     } catch {
-      showError('Unable to save provider settings. Check your configuration and try again.');
+      showError(
+        copy(
+          'workflowSettings.saveProviderFailed',
+          'Unable to save provider settings. Check your configuration and try again.',
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -755,8 +856,14 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
       if (!resolved.ok || resolved.route.mode !== 'providers') {
         showError(
           !resolved.ok && resolved.code.startsWith('POLICY')
-            ? 'Organization policy does not currently permit this provider check.'
-            : 'Check your provider, model, and endpoint before testing.',
+            ? copy(
+                'workflowSettings.policyCheckBlocked',
+                'Organization policy does not currently permit this provider check.',
+              )
+            : copy(
+                'workflowSettings.checkSetup',
+                'Check your provider, model, and endpoint before testing.',
+              ),
         );
         return;
       }
@@ -775,8 +882,14 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         setDiscoveredModels(result.models);
         showToast(
           result.models.length
-            ? 'Model catalog loaded. Inference access has not been verified.'
-            : 'No models were listed. You can still enter a model ID manually.',
+            ? copy(
+                'workflowSettings.catalogLoaded',
+                'Model catalog loaded. Inference access has not been verified.',
+              )
+            : copy(
+                'workflowSettings.catalogEmpty',
+                'No models were listed. You can still enter a model ID manually.',
+              ),
           'info',
         );
       } else {
@@ -788,20 +901,38 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         if (controller.signal.aborted) return;
         adoptWorkingEndpoint(draft, result.endpoint);
         if (result.verification === 'inference')
-          showToast('Connection works. Save to use it.', 'success');
+          showToast(
+            copy('workflowSettings.connectionWorks', 'Connection works. Save to use it.'),
+            'success',
+          );
         else
           showToast(
-            'Model catalog accessible. Transcription and inference access have not been verified.',
+            copy(
+              'workflowSettings.catalogOnly',
+              'Model catalog accessible. Transcription and inference access have not been verified.',
+            ),
             'info',
           );
       }
     } catch (failure: unknown) {
-      if (!controller.signal.aborted)
+      if (!controller.signal.aborted) {
+        const providerFailure = failure instanceof ProviderExecutionError ? failure : undefined;
+        const key =
+          providerFailure &&
+          (providerFailure.code !== 'PROVIDER_REQUEST_FAILED' ||
+            Number.isInteger(providerFailure.status))
+            ? PROVIDER_FAILURE_COPY[providerFailure.code]
+            : undefined;
+        const fallback =
+          'Unable to check this provider. Check the endpoint and connection, then try again.';
         showError(
-          failure instanceof ProviderExecutionError
-            ? failure.message
-            : 'Unable to check this provider. Check the endpoint and connection, then try again.',
+          Platform.OS !== 'android' && providerFailure
+            ? providerFailure.message
+            : copy(`workflowSettings.${key ?? 'checkFailed'}`, fallback, {
+                status: providerFailure?.status,
+              }),
         );
+      }
     } finally {
       diagnosticController.current = null;
       setChecking(null);
@@ -813,10 +944,21 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
     if (!provider) return;
     const custom = provider.id === 'custom';
     confirmDestructive(
-      custom ? "Remove this server's key?" : `Remove your ${keyOwner} key?`,
       custom
-        ? 'Every workflow using this server loses its key until you add one again.'
-        : `Every workflow set to ${keyOwner} stops until you add a key again.`,
+        ? copy('workflowSettings.removeServerTitle', "Remove this server's key?")
+        : copy('workflowSettings.removeProviderTitle', `Remove your ${keyOwner} key?`, {
+            provider: keyOwner,
+          }),
+      custom
+        ? copy(
+            'workflowSettings.removeServerBody',
+            'Every workflow using this server loses its key until you add one again.',
+          )
+        : copy(
+            'workflowSettings.removeProviderBody',
+            `Every workflow set to ${keyOwner} stops until you add a key again.`,
+            { provider: keyOwner },
+          ),
       async (): Promise<void> => {
         setBusy(true);
         try {
@@ -824,14 +966,29 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
           await removeProviderCredential(reference);
           setConfigured(false);
           clearInputs();
-          showToast(custom ? 'Server key removed.' : `${keyOwner} key removed.`, 'success');
+          showToast(
+            custom
+              ? copy('workflowSettings.serverKeyRemoved', 'Server key removed.')
+              : copy('workflowSettings.providerKeyRemoved', `${keyOwner} key removed.`, {
+                  provider: keyOwner,
+                }),
+            'success',
+          );
         } catch {
-          showError('Unable to remove this key. Please try again.');
+          showError(
+            copy(
+              'workflowSettings.removeKeyFailed',
+              'Unable to remove this key. Please try again.',
+            ),
+          );
         } finally {
           setBusy(false);
         }
       },
-      { destructiveLabel: 'Remove' },
+      {
+        destructiveLabel: copy('workflowSettings.removeAction', 'Remove'),
+        cancelLabel: copy('cancel', 'Cancel'),
+      },
     );
   }
 
@@ -839,7 +996,12 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
     try {
       await Linking.openURL(url);
     } catch {
-      showError('Unable to open the provider website. Please try again.');
+      showError(
+        copy(
+          'workflowSettings.openProviderFailed',
+          'Unable to open the provider website. Please try again.',
+        ),
+      );
     }
   }
 
