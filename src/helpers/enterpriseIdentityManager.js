@@ -6,6 +6,7 @@ const {
   managedScopesForConfig,
 } = require("./enterpriseManagedConfig.mjs");
 const { AuthContextError } = require("./cloudApiRequest");
+const { CLIENT_CAPABILITIES } = require("./policyRequestHeaders");
 
 const CONFIG_CACHE_VERSION = 1;
 const CONFIG_REFRESH_MS = 5 * 60 * 1000;
@@ -219,6 +220,8 @@ function createEnterpriseIdentityManager({
     return {
       ...identity.authHeaders,
       "x-openwhispr-version": getAppVersion(),
+      // The server serves gateway and realtime records only to builds that advertise the audio client.
+      "x-openwhispr-capabilities": CLIENT_CAPABILITIES,
       ...(json ? { "Content-Type": "application/json" } : {}),
     };
   }

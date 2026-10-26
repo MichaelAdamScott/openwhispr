@@ -72,7 +72,8 @@ test("deduplicates config and Azure token refreshes while keeping cloud tokens o
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openwhispr-enterprise-"));
   t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
   const calls = { config: 0, assertion: 0, azure: 0 };
-  const proxyFetch = async (url) => {
+  let configHeaders;
+  const proxyFetch = async (url, init) => {
     if (url.includes("/enterprise-providers/azure/assertion")) {
       calls.assertion += 1;
       return jsonResponse({ data: { assertion: "signed-openwhispr-assertion" } });
@@ -82,6 +83,7 @@ test("deduplicates config and Azure token refreshes while keeping cloud tokens o
       return jsonResponse({ access_token: "azure-bearer-token", expires_in: 3600 });
     }
     calls.config += 1;
+    configHeaders = init.headers;
     return jsonResponse({ data: managedConfig() });
   };
   const tokenState = { token: "openwhispr-session", generation: 4 };
@@ -100,6 +102,8 @@ test("deduplicates config and Azure token refreshes while keeping cloud tokens o
   assert.equal(left.success, true);
   assert.equal(right.success, true);
   assert.equal(calls.config, 1);
+  // Without the audio capability the server narrows the envelope to the 1.10 contract.
+  assert.match(configHeaders["x-openwhispr-capabilities"], /(^|,)enterprise-audio-v1(,|$)/);
   assert.equal(JSON.stringify(left).includes("azure-bearer-token"), false);
   assert.equal(JSON.stringify(left).includes("signed-openwhispr-assertion"), false);
 
