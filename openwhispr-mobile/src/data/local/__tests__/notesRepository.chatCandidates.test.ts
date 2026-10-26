@@ -243,6 +243,120 @@ describe('LocalNotesRepository.getChatCandidateNotes', () => {
     expect(ids('10,000')).toEqual([amount]);
   });
 
+  it('matches a longer Latin term only where a word starts', () => {
+    const { repo, db } = createMemoryRepository();
+    const groceries = seed(repo, db, {
+      content: 'Buy more oat milk.',
+      updatedAt: '2026-10-01 10:00:00',
+    });
+    const moreover = seed(repo, db, { title: 'Moreover', updatedAt: '2026-10-02 10:00:00' });
+    const budgets = seed(repo, db, {
+      content: 'Budgets: (budgeting) and "Budget"',
+      updatedAt: '2026-10-03 10:00:00',
+    });
+    seed(repo, db, {
+      content: 'Furthermore, the async job ran. Un éxito. Darüber reden.',
+      updatedAt: '2026-10-04 10:00:00',
+    });
+    const handover = seed(repo, db, { title: 'Übergabe', updatedAt: '2026-10-05 10:00:00' });
+    const marked = seed(repo, db, {
+      content: 'See #roadmap with @dana:\n**launch** (pricing)',
+      updatedAt: '2026-10-06 10:00:00',
+    });
+
+    const ids = (term: string): number[] =>
+      repo
+        .getChatCandidateNotes([term], { includePrivate: false, limit: 10 })
+        .notes.map((note) => note.id);
+
+    expect(ids('more')).toEqual([moreover, groceries]);
+    expect(ids('budget')).toEqual([budgets]);
+    expect(ids('sync')).toEqual([]);
+    // An accented letter before it is part of the word, not a boundary.
+    expect(ids('xito')).toEqual([]);
+    expect(ids('über')).toEqual([handover]);
+    for (const term of ['roadmap', 'dana', 'launch', 'pricing'])
+      expect(ids(term)).toEqual([marked]);
+  });
+
+  it('matches a word-starting term in the transcript too', () => {
+    const { repo } = createMemoryRepository();
+    const id = repo.createNote('Weekly sync', '').id;
+    repo.replaceSegments(id, [{ noteId: id, startMs: 0, endMs: 1000, text: 'Furthermore, no.' }]);
+
+    expect(
+      repo.getChatCandidateNotes(['more'], { includePrivate: false, limit: 10 }).notes,
+    ).toEqual([]);
+  });
+
+  it('finds a word after an apostrophe, a dash, punctuation or CJK text', () => {
+    const { repo, db } = createMemoryRepository();
+    const elided = seed(repo, db, {
+      content: 'Réunion avec l’équipe',
+      updatedAt: '2026-10-01 10:00:00',
+    });
+    const dashed = seed(repo, db, {
+      content: 'pricing—budget,launch.roadmap',
+      updatedAt: '2026-10-02 10:00:00',
+    });
+    const japanese = seed(repo, db, {
+      content: '会議でBudget確認',
+      updatedAt: '2026-10-03 10:00:00',
+    });
+    const spoken = repo.createNote('Sync', '').id;
+    repo.replaceSegments(spoken, [
+      { noteId: spoken, startMs: 0, endMs: 1000, text: "on a parlé avec l'équipe (hiring)" },
+      { noteId: spoken, startMs: 1000, endMs: 2000, text: 'okay,vendor. end.Metrics' },
+    ]);
+
+    const ids = (term: string): number[] =>
+      repo
+        .getChatCandidateNotes([term], { includePrivate: false, limit: 10 })
+        .notes.map((note) => note.id)
+        .sort((a, b) => a - b);
+
+    expect(ids('équipe')).toEqual([elided, spoken]);
+    expect(ids('budget')).toEqual([dashed, japanese]);
+    expect(ids('launch')).toEqual([dashed]);
+    expect(ids('roadmap')).toEqual([dashed]);
+    for (const term of ['hiring', 'vendor', 'metrics']) expect(ids(term)).toEqual([spoken]);
+    // A word inside a longer CJK-adjacent word still doesn't start there.
+    expect(ids('udget')).toEqual([]);
+  });
+
+  it('says which of the notes it returns matched in their transcript', () => {
+    const { repo, db } = createMemoryRepository();
+    const titled = seed(repo, db, { title: 'SSO rollout', updatedAt: '2026-10-01 10:00:00' });
+    repo.replaceSegments(titled, [
+      { noteId: titled, startMs: 0, endMs: 1000, text: 'Lunch is at noon.' },
+    ]);
+    const spoken = seed(repo, db, {
+      title: 'Platform sync',
+      enhancedContent: 'We reviewed the quarter.',
+      updatedAt: '2026-10-02 10:00:00',
+    });
+    repo.replaceSegments(spoken, [
+      { noteId: spoken, startMs: 0, endMs: 1000, text: 'Dana: the SSO bug is fixed.' },
+    ]);
+    const deleted = seed(repo, db, { title: 'SSO notes', updatedAt: '2026-10-03 10:00:00' });
+    repo.replaceSegments(deleted, [
+      { noteId: deleted, startMs: 0, endMs: 1000, text: 'The SSO bug again.' },
+    ]);
+    db.update(transcriptSegments)
+      .set({ deletedAt: '2026-10-03 11:00:00' })
+      .where(eq(transcriptSegments.noteId, deleted))
+      .run();
+
+    const result = repo.getChatCandidateNotes(['sso', 'bug'], { includePrivate: false, limit: 10 });
+
+    expect(result.notes.map((note) => note.id).sort()).toEqual([titled, spoken, deleted].sort());
+    expect(result.transcriptMatchIds).toEqual([spoken]);
+    // A period read with no words has nothing to match.
+    expect(repo.getChatCandidateNotes([], { includePrivate: false, limit: 10 })).not.toHaveProperty(
+      'transcriptMatchIds',
+    );
+  });
+
   it('matches a Korean term inside a longer word', () => {
     const { repo, db } = createMemoryRepository();
     const id = seed(repo, db, {

@@ -117,6 +117,11 @@ it('does not save the spoken question to transcript history', () => {
   expect(mockRecordingOptions.saveToHistory).toBe(false);
 });
 
+it('sends the spoken question as heard, without dictation cleanup', () => {
+  renderVoiceInput('conv-1');
+  expect(mockRecordingOptions.cleanup).toBe(false);
+});
+
 it('sends the transcript as a chat question', async () => {
   const onSent = jest.fn();
   mockStopBehavior = async () => {
@@ -373,6 +378,27 @@ const stopWhileTranscribing = async (report: () => Promise<void> | void): Promis
   });
 };
 
+it('cancels the transcription of a stopped question, and only that one', async () => {
+  const seen: (boolean | undefined)[] = [];
+  mockStopBehavior = async () => {
+    seen.push(mockRecordingOptions.shouldCancel?.());
+  };
+  const { result, rerender } = renderVoiceInput('conv-1');
+  await act(async () => {
+    await result.current.start(false);
+  });
+  rerender({});
+  await act(async () => {
+    await result.current.finish();
+  });
+
+  await stopWhileTranscribing(() => {
+    seen.push(mockRecordingOptions.shouldCancel?.());
+  });
+
+  expect(seen).toEqual([false, true]);
+});
+
 it('drops a stopped question instead of offering the cloud for it', async () => {
   const discard = jest.fn(async () => undefined);
 
@@ -588,6 +614,15 @@ it('refreshes usage after a cloud transcription', () => {
   mockRecordingOptions.onComplete?.('Anything');
 
   expect(mockLoadUsage).toHaveBeenCalledWith(true);
+});
+
+it('refreshes usage for a cloud question stopped while it transcribed', async () => {
+  mockActiveMode = 'cloud';
+
+  await stopWhileTranscribing(() => undefined);
+
+  expect(mockLoadUsage).toHaveBeenCalledWith(true);
+  expect(mockSend).not.toHaveBeenCalled();
 });
 
 it('stops the recorder when cancelled while listening', async () => {

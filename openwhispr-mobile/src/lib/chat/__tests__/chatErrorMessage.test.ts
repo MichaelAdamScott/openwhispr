@@ -1,7 +1,7 @@
 import { LocalReasoningError, UNSUPPORTED_LANGUAGE_MESSAGE } from '@/lib/localReasoning';
 import { UPGRADE_REQUIRED_MESSAGE } from '@/lib/policyMessages';
 import type { LocalReasoningErrorCode } from '@/types';
-import { toChatErrorMessage } from '../chatErrorMessage';
+import { ChatNotesReadError, toChatErrorMessage } from '../chatErrorMessage';
 
 const CONNECTION = 'Check your connection and try again.';
 const ON_DEVICE = 'On-device AI isn’t available right now.';
@@ -40,9 +40,20 @@ describe('toChatErrorMessage', () => {
     ).toBe(UNSUPPORTED_LANGUAGE_MESSAGE);
   });
 
+  // A retry gets the same refusal, so each says what to change rather than that it's unavailable.
+  it('asks to rephrase after a guardrail refusal', () => {
+    expect(toChatErrorMessage(new LocalReasoningError('APPLE_LLM_GUARDRAIL', 'Raw text.'))).toBe(
+      'On-device AI declined to answer this. Try rephrasing your question.',
+    );
+  });
+
+  it('asks for a narrower question when the answer was too long', () => {
+    expect(toChatErrorMessage(new LocalReasoningError('APPLE_LLM_OUTPUT_LIMIT', 'Raw text.'))).toBe(
+      'The answer was too long for on-device AI. Try a narrower question.',
+    );
+  });
+
   it.each<LocalReasoningErrorCode>([
-    'APPLE_LLM_GUARDRAIL',
-    'APPLE_LLM_OUTPUT_LIMIT',
     'APPLE_LLM_RATE_LIMITED',
     'APPLE_LLM_UNAVAILABLE',
     'APPLE_LLM_FAILED',
@@ -54,11 +65,36 @@ describe('toChatErrorMessage', () => {
   it.each<LocalReasoningErrorCode>(['LOCAL_CONTEXT_LIMIT', 'APPLE_LLM_CONTEXT_LIMIT'])(
     'suggests a shorter question for %s',
     (code) => {
-      expect(toChatErrorMessage(new LocalReasoningError(code, 'Context window full.'))).toBe(
-        'This question needs more context than on-device AI can handle. Try a shorter question or start a new chat.',
-      );
+      const error = new LocalReasoningError(code, 'Context window full.');
+      const chatTab =
+        'This question needs more context than on-device AI can handle. Try a shorter question or start a new chat.';
+      expect(toChatErrorMessage(error)).toBe(chatTab);
+      expect(toChatErrorMessage(error, { surface: 'chat' })).toBe(chatTab);
     },
   );
+
+  it('says the note is too long in note chat, which has already cut it', () => {
+    expect(
+      toChatErrorMessage(
+        new LocalReasoningError('APPLE_LLM_CONTEXT_LIMIT', 'Context window full.'),
+        {
+          surface: 'noteChat',
+        },
+      ),
+    ).toBe('This note is too long for on-device AI.');
+    // Only the context limit differs between the surfaces.
+    expect(
+      toChatErrorMessage(new LocalReasoningError('APPLE_LLM_GUARDRAIL', 'Raw text.'), {
+        surface: 'noteChat',
+      }),
+    ).toBe('On-device AI declined to answer this. Try rephrasing your question.');
+  });
+
+  it('says the notes couldn’t be read, never that the connection failed', () => {
+    expect(toChatErrorMessage(new ChatNotesReadError(new Error('database is locked')))).toBe(
+      'Couldn’t read your notes. Try again.',
+    );
+  });
 
   it('keeps an organization policy message', () => {
     const message = "Your organization's policy doesn't allow OpenWhispr cloud AI.";

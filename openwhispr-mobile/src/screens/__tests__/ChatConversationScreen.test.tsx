@@ -64,6 +64,11 @@ jest.mock('@/data', () => ({
     }),
   },
 }));
+jest.mock('@/store/useNotesStore', () => ({
+  useNotesStore: (
+    selector: (state: { notes: []; getNoteById: (id: number) => object }) => unknown,
+  ) => selector({ notes: [], getNoteById: (id: number) => ({ id }) }),
+}));
 jest.mock('@/lib/chat/runChatTurn', () => ({
   runChatTurn: jest.fn(async () => ({ text: 'Answer', steps: [], sources: [] })),
 }));
@@ -72,6 +77,13 @@ jest.mock('@/hooks/useChatSendGate', () => ({
     chatEnabled: mockChatEnabled,
     gate: (run: (allowCloudFallback: boolean) => void) => run(false),
   }),
+}));
+let mockTranscriptionAllowed = true;
+const mockGateTranscription = jest.fn((run: () => void) => {
+  if (mockTranscriptionAllowed) run();
+});
+jest.mock('@/hooks/useCloudTranscriptionGate', () => ({
+  useCloudTranscriptionGate: () => mockGateTranscription,
 }));
 jest.mock('@/hooks/useChatVoiceInput', () => ({
   useChatVoiceInput: (options: typeof mockVoiceOptions) => {
@@ -130,6 +142,7 @@ beforeEach(() => {
   mockDb.conversations = [];
   mockDb.messages = [];
   mockVoice.state = 'idle';
+  mockTranscriptionAllowed = true;
   jest.clearAllMocks();
   useChatStore.setState({
     conversations: [
@@ -203,6 +216,7 @@ describe('ChatConversationScreen', () => {
           conversationId: 'c1',
           messageId: 'm1',
           question: question.text,
+          reason: 'failed',
           message: 'Check your connection and try again.',
         },
       },
@@ -223,6 +237,7 @@ describe('ChatConversationScreen', () => {
           conversationId: 'c1',
           messageId: 'm1',
           question: question.text,
+          reason: 'failed',
           message: 'Check your connection and try again.',
         },
       },
@@ -245,6 +260,7 @@ describe('ChatConversationScreen', () => {
           conversationId: 'c1',
           messageId: 'm1',
           question: question.text,
+          reason: 'failed',
           message: 'Check your connection and try again.',
         },
       },
@@ -261,10 +277,107 @@ describe('ChatConversationScreen', () => {
     expect(screen.getByPlaceholderText('Reply').props.value).toBe('What did we decide?');
   });
 
-  it('hides a failure from another chat', () => {
+  it('fills an empty composer from Edit question and keeps what was already typed', () => {
     useChatStore.setState({
       failures: {
-        c2: { conversationId: 'c2', messageId: 'm9', question: 'Other', message: 'Offline' },
+        c1: {
+          conversationId: 'c1',
+          messageId: 'm1',
+          question: question.text,
+          reason: 'failed',
+          message: 'Check your connection and try again.',
+        },
+      },
+    });
+    const screen = render(<ChatConversationScreen />);
+    fireEvent.changeText(screen.getByPlaceholderText('Reply'), 'Also the price,');
+
+    fireEvent.press(screen.getByLabelText('Edit question'));
+    expect(screen.getByPlaceholderText('Reply').props.value).toBe(
+      'Also the price, What did we decide?',
+    );
+  });
+
+  it('leaves the composer alone when it already holds the question', () => {
+    const screen = render(<ChatConversationScreen />);
+    fireEvent.changeText(screen.getByPlaceholderText('Reply'), 'What did we decide? ');
+
+    fireEvent.press(screen.getByLabelText('Edit question'));
+    expect(screen.getByPlaceholderText('Reply').props.value).toBe('What did we decide? ');
+  });
+
+  it('says a stopped answer was stopped, with Retry', () => {
+    useChatStore.setState({
+      failures: {
+        c1: {
+          conversationId: 'c1',
+          messageId: 'm1',
+          question: question.text,
+          reason: 'stopped',
+          message: '',
+        },
+      },
+    });
+    const screen = render(<ChatConversationScreen />);
+
+    expect(screen.getByText('Stopped')).toBeTruthy();
+    expect(screen.getByText('Your question is saved.')).toBeTruthy();
+    expect(screen.queryByText('Couldn’t get an answer')).toBeNull();
+    fireEvent.press(screen.getByLabelText('Retry'));
+    expect(mockRetry).toHaveBeenCalledWith('c1', { allowCloudFallback: false });
+  });
+
+  it('offers Retry and Edit question for a saved question left without an answer', () => {
+    // As after a relaunch: nothing in memory, the question is the last saved message.
+    const screen = render(<ChatConversationScreen />);
+
+    expect(screen.getByText('Not answered')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Retry'));
+    expect(mockRetry).toHaveBeenCalledWith('c1', { allowCloudFallback: false });
+    fireEvent.press(screen.getByLabelText('Edit question'));
+    expect(mockEditFailedQuestion).toHaveBeenCalledWith('c1');
+  });
+
+  it('offers no Retry while this chat’s question is being answered, or once it is', () => {
+    useChatStore.setState({
+      pending: { conversationId: 'c1', phase: 'working', steps: [], startedAt: Date.now() },
+    });
+    const screen = render(<ChatConversationScreen />);
+    expect(screen.queryByLabelText('Retry')).toBeNull();
+
+    act(() => {
+      useChatStore.setState({
+        pending: null,
+        messages: [question, { ...question, id: 'm2', role: 'assistant', text: 'We kept $12.' }],
+      });
+    });
+    expect(screen.queryByLabelText('Retry')).toBeNull();
+  });
+
+  it('checks cloud transcription before opening the mic', () => {
+    const screen = render(<ChatConversationScreen />);
+
+    mockTranscriptionAllowed = false;
+    fireEvent.press(screen.getByLabelText('Speak your question'));
+    expect(mockGateTranscription).toHaveBeenCalledTimes(1);
+    expect(mockVoice.start).not.toHaveBeenCalled();
+
+    mockTranscriptionAllowed = true;
+    fireEvent.press(screen.getByLabelText('Speak your question'));
+    expect(mockVoice.start).toHaveBeenCalledWith(false);
+  });
+
+  it('hides a failure from another chat', () => {
+    useChatStore.setState({
+      messages: [question, { ...question, id: 'm2', role: 'assistant', text: 'We kept $12.' }],
+      failures: {
+        c2: {
+          conversationId: 'c2',
+          messageId: 'm9',
+          question: 'Other',
+          reason: 'failed',
+          message: 'Offline',
+        },
       },
     });
     const screen = render(<ChatConversationScreen />);
@@ -285,7 +398,13 @@ describe('ChatConversationScreen', () => {
         },
       ],
       failures: {
-        c1: { conversationId: 'c1', messageId: 'm1', question: 'q', message: 'Offline' },
+        c1: {
+          conversationId: 'c1',
+          messageId: 'm1',
+          question: 'q',
+          reason: 'failed',
+          message: 'Offline',
+        },
       },
     });
     const screen = render(<ChatConversationScreen />);
@@ -300,7 +419,13 @@ describe('ChatConversationScreen', () => {
     useChatStore.setState({
       pending: { conversationId: 'c2', phase: 'working', steps: [], startedAt: Date.now() },
       failures: {
-        c1: { conversationId: 'c1', messageId: 'm1', question: 'q', message: 'Offline' },
+        c1: {
+          conversationId: 'c1',
+          messageId: 'm1',
+          question: 'q',
+          reason: 'failed',
+          message: 'Offline',
+        },
       },
     });
     const screen = render(<ChatConversationScreen />);
@@ -399,7 +524,13 @@ describe('ChatConversationScreen', () => {
       useChatStore.setState({
         pending: null,
         failures: {
-          c1: { conversationId: 'c1', messageId: 'm1', question: 'q', message: 'Offline.' },
+          c1: {
+            conversationId: 'c1',
+            messageId: 'm1',
+            question: 'q',
+            reason: 'failed',
+            message: 'Offline.',
+          },
         },
       });
     });

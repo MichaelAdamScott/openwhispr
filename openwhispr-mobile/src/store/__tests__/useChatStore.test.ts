@@ -238,6 +238,7 @@ describe('useChatStore', () => {
       conversationId,
       messageId: userMessage.id,
       question: 'question',
+      reason: 'failed',
       message: 'Check your connection and try again.',
     });
     expect(useChatStore.getState().pending).toBeNull();
@@ -390,14 +391,16 @@ describe('useChatStore', () => {
     expect(mockRepo.getMessages(conversation.id).map(({ text }) => text)).toEqual(['q1', 'a1']);
   });
 
-  it('cancel keeps the question and clears pending', async () => {
+  it('cancel keeps the question, clears pending and records it as stopped', async () => {
     const turn = deferred<ChatTurnResult>();
     mockRun.mockReturnValueOnce(turn.promise);
+    mockRun.mockResolvedValueOnce(answer('answered after all'));
 
     const sent = useChatStore.getState().send('question', {
       conversationId: null,
       ...sendOptions,
     });
+    const conversationId = sent?.conversationId ?? '';
     useChatStore.getState().cancel();
 
     expect(turnInput(0).signal.aborted).toBe(true);
@@ -406,11 +409,103 @@ describe('useChatStore', () => {
     turn.reject(abortError());
     await sent?.done;
 
-    expect(mockRepo.getMessages(sent?.conversationId ?? '').map(({ text }) => text)).toEqual([
+    expect(mockRepo.getMessages(conversationId).map(({ text }) => text)).toEqual(['question']);
+    expect(useChatStore.getState().failures[conversationId]).toMatchObject({
+      question: 'question',
+      reason: 'stopped',
+    });
+    expect(useChatStore.getState().pending).toBeNull();
+
+    await useChatStore.getState().retry(conversationId, sendOptions);
+    expect(turnInput(1).question).toBe('question');
+    expect(mockRepo.getMessages(conversationId).map(({ text }) => text)).toEqual([
       'question',
+      'answered after all',
     ]);
     expect(useChatStore.getState().failures).toEqual({});
-    expect(useChatStore.getState().pending).toBeNull();
+  });
+
+  it('records nothing when a spoken question is stopped before it is sent', () => {
+    useChatStore.getState().beginTranscribing(null);
+    useChatStore.getState().cancel();
+    expect(useChatStore.getState().failures).toEqual({});
+  });
+
+  it('retries a saved question left without an answer, as after a relaunch', async () => {
+    const conversation = mockRepo.createConversation('Pricing');
+    const earlier = [
+      mockRepo.appendMessage({ conversationId: conversation.id, role: 'user', text: 'q1' }),
+      mockRepo.appendMessage({ conversationId: conversation.id, role: 'assistant', text: 'a1' }),
+    ];
+    mockRepo.appendMessage({ conversationId: conversation.id, role: 'user', text: 'cut off' });
+    mockRun.mockResolvedValueOnce(answer('a2'));
+    useChatStore.getState().openConversation(conversation.id);
+
+    await useChatStore.getState().retry(conversation.id, sendOptions);
+
+    expect(turnInput(0)).toMatchObject({ question: 'cut off', history: earlier });
+    expect(mockRepo.getMessages(conversation.id).map(({ text }) => text)).toEqual([
+      'q1',
+      'a1',
+      'cut off',
+      'a2',
+    ]);
+  });
+
+  it('does nothing on Retry when the last saved message is an answer', async () => {
+    const conversation = mockRepo.createConversation('Pricing');
+    mockRepo.appendMessage({ conversationId: conversation.id, role: 'user', text: 'q1' });
+    mockRepo.appendMessage({ conversationId: conversation.id, role: 'assistant', text: 'a1' });
+
+    await useChatStore.getState().retry(conversation.id, sendOptions);
+
+    expect(mockRun).not.toHaveBeenCalled();
+    expect(useChatStore.getState().editFailedQuestion(conversation.id)).toBeNull();
+  });
+
+  it('hands a saved unanswered question back for editing', () => {
+    const conversation = mockRepo.createConversation('Pricing');
+    mockRepo.appendMessage({ conversationId: conversation.id, role: 'user', text: 'q1' });
+    mockRepo.appendMessage({ conversationId: conversation.id, role: 'assistant', text: 'a1' });
+    mockRepo.appendMessage({ conversationId: conversation.id, role: 'user', text: 'cut off' });
+    useChatStore.getState().openConversation(conversation.id);
+
+    expect(useChatStore.getState().editFailedQuestion(conversation.id)).toBe('cut off');
+    expect(mockRepo.getMessages(conversation.id).map(({ text }) => text)).toEqual(['q1', 'a1']);
+    expect(useChatStore.getState().messages.map(({ text }) => text)).toEqual(['q1', 'a1']);
+  });
+
+  it('never edits away a question that is still being answered', () => {
+    mockRun.mockReturnValueOnce(deferred<ChatTurnResult>().promise);
+    const sent = useChatStore.getState().send('working on it', {
+      conversationId: null,
+      ...sendOptions,
+    });
+    const conversationId = sent?.conversationId ?? '';
+
+    expect(useChatStore.getState().editFailedQuestion(conversationId)).toBeNull();
+    expect(mockRepo.getMessages(conversationId).map(({ text }) => text)).toEqual(['working on it']);
+  });
+
+  it('leaves unanswered questions out of the next turn’s history', async () => {
+    const conversation = mockRepo.createConversation('Pricing');
+    const say = (role: 'user' | 'assistant', text: string): void => {
+      mockRepo.appendMessage({ conversationId: conversation.id, role, text });
+    };
+    say('user', 'q1');
+    say('assistant', 'a1');
+    say('user', 'stopped, then asked something else');
+    say('user', 'q2');
+    say('assistant', 'a2');
+    say('user', 'failed');
+    mockRun.mockResolvedValueOnce(answer('a3'));
+
+    await useChatStore.getState().send('q3', { conversationId: conversation.id, ...sendOptions })
+      ?.done;
+
+    expect(turnInput(0).history.map(({ text }) => text)).toEqual(['q1', 'a1', 'q2', 'a2']);
+    // The questions stay in the chat itself.
+    expect(mockRepo.getMessages(conversation.id)).toHaveLength(8);
   });
 
   it('records a failure when a current turn rejects with an AbortError', async () => {

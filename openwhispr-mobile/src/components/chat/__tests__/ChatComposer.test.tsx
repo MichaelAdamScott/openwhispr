@@ -1,3 +1,5 @@
+import { createRef } from 'react';
+import type { TextInput } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { ChatComposer } from '../ChatComposer';
 
@@ -22,6 +24,12 @@ const renderComposer = (
 };
 
 describe('ChatComposer', () => {
+  it('hands the screen its input, so Edit question can focus it', () => {
+    const inputRef = createRef<TextInput>();
+    renderComposer({ inputRef });
+    expect(typeof inputRef.current?.focus).toBe('function');
+  });
+
   it('swaps mic, send and stop', () => {
     const empty = renderComposer();
     expect(empty.getByLabelText('Speak your question')).toBeTruthy();

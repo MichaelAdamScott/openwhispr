@@ -1036,7 +1036,7 @@ export default function NoteEditorScreen({
         // the Chat tab.
         setChatError(
           error instanceof LocalReasoningError
-            ? toChatErrorMessage(error)
+            ? toChatErrorMessage(error, { surface: 'noteChat' })
             : error instanceof Error
               ? error.message
               : 'Chat failed',
@@ -1209,10 +1209,15 @@ export default function NoteEditorScreen({
     usesSegmentTranscript && note?.noteType !== 'upload',
   );
 
+  // A deleted note can still be opened from a chat's source link. Both stacks hide the native
+  // header and the tab bar here, so the back button is the only way out.
   if (!note && !isNaN(noteId)) {
     return (
-      <View className="flex-1 items-center justify-center">
-        <Text className="text-tertiaryLabel">Note not found</Text>
+      <View className="flex-1 bg-systemBackground">
+        <TabScreenHeader title="" left={<GlassBackButton fallbackRoute={stack.root} />} />
+        <View className="flex-1 items-center justify-center">
+          <Text className="text-tertiaryLabel">Note not found</Text>
+        </View>
       </View>
     );
   }

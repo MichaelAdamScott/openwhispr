@@ -27,6 +27,25 @@ jest.mock('@/components/notes/MarkdownRenderer', () => ({
   },
 }));
 
+// A real store, so a deleted note re-renders the chips as the app's notes list would.
+const mockDeletedNoteIds = new Set<number>();
+jest.mock('@/store/useNotesStore', () => {
+  const { create } = require('zustand');
+  return {
+    useNotesStore: create(() => ({
+      notes: [],
+      getNoteById: (id: number) => (mockDeletedNoteIds.has(id) ? null : { id }),
+    })),
+  };
+});
+const { useNotesStore: mockNotesStore } = jest.requireMock('@/store/useNotesStore') as {
+  useNotesStore: { setState: (state: { notes: unknown[] }) => void };
+};
+
+beforeEach(() => {
+  mockDeletedNoteIds.clear();
+});
+
 const message: ChatMessage = {
   id: 'm1',
   conversationId: 'c1',
@@ -46,6 +65,30 @@ describe('ChatAssistantMessage', () => {
     expect(getByRole('link')).toBeTruthy();
     fireEvent.press(getByText('Pricing call'));
     expect(onOpenNote).toHaveBeenCalledWith(7);
+  });
+
+  it('disables the chip of a note deleted since the answer, as soon as it goes', () => {
+    const onOpenNote = jest.fn();
+    const twoSources: ChatMessage = {
+      ...message,
+      sources: [...message.sources, { noteId: 8, title: 'Roadmap' }],
+    };
+    const { getByLabelText } = render(
+      <ChatAssistantMessage message={twoSources} onOpenNote={onOpenNote} />,
+    );
+    expect(getByLabelText('Pricing call').props.accessibilityState).toEqual({ disabled: false });
+
+    mockDeletedNoteIds.add(7);
+    act(() => {
+      mockNotesStore.setState({ notes: [] });
+    });
+
+    const deleted = getByLabelText('Pricing call, deleted');
+    expect(deleted.props.accessibilityState).toEqual({ disabled: true });
+    fireEvent.press(deleted);
+    expect(onOpenNote).not.toHaveBeenCalled();
+    fireEvent.press(getByLabelText('Roadmap'));
+    expect(onOpenNote).toHaveBeenCalledWith(8);
   });
 
   it('copies the answer and says so briefly', async () => {

@@ -18,6 +18,8 @@ export interface ChatFailure {
   conversationId: string;
   messageId: string;
   question: string;
+  // 'stopped' when the user stopped the turn, which says nothing went wrong.
+  reason: 'failed' | 'stopped';
   message: string;
 }
 
@@ -36,7 +38,8 @@ interface ChatState {
   activeConversationId: string | null;
   messages: ChatMessage[];
   pending: ChatPending | null;
-  // Keyed by conversation, so a failure in one chat never takes another's Retry away.
+  // Keyed by conversation, so a failure in one chat never takes another's Retry away. Held in
+  // memory only: after a relaunch an unanswered question is read from the saved messages instead.
   failures: Record<string, ChatFailure>;
   // Set when a send was refused because a failed chat wipe still holds the saved chats back, so the
   // screens can say why nothing was sent. Cleared once the wipe goes through.
@@ -49,6 +52,8 @@ interface ChatState {
   beginTranscribing: (conversationId: string | null) => boolean;
   endTranscribing: () => void;
   send: (question: string, options: ChatSendOptions) => ChatSendResult | null;
+  // Both act on the conversation's unanswered question: the one that failed or was stopped, or a
+  // saved question left without an answer (the app was closed mid-turn).
   retry: (conversationId: string, options: { allowCloudFallback: boolean }) => Promise<void>;
   editFailedQuestion: (conversationId: string) => string | null;
   cancel: () => void;
@@ -93,8 +98,13 @@ const withoutFailure = (
 
 // One turn runs at a time across every conversation. Bumping the generation orphans whatever is
 // in flight, so a result that lands after a cancel, reset or delete never writes anything.
-const turn: { controller: AbortController | null; generation: number } = {
+const turn: {
+  controller: AbortController | null;
+  request: TurnRequest | null;
+  generation: number;
+} = {
   controller: null,
+  request: null,
   generation: 0,
 };
 
@@ -102,7 +112,22 @@ const abortTurn = (): void => {
   turn.generation += 1;
   turn.controller?.abort();
   turn.controller = null;
+  turn.request = null;
 };
+
+/** The user's question with no answer after it: the one that failed, was stopped or was cut off. */
+interface UnansweredQuestion {
+  messageId: string;
+  question: string;
+}
+
+// An unanswered question stays in the chat for Retry, but the model only sees questions that got
+// an answer: two questions in a row would read as one turn and get both answered, though the user
+// gave up on the first and can see it was never answered.
+const withoutUnansweredQuestions = (history: ChatMessage[]): ChatMessage[] =>
+  history.filter(
+    (message, index) => message.role === 'assistant' || history[index + 1]?.role === 'assistant',
+  );
 
 // A wipe that failed (the chats of an account signed out or switched away from) is finished before
 // any chat is read again, and nothing shows while it still fails. The flag is persisted, since the
@@ -169,6 +194,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     const controller = new AbortController();
     turn.generation += 1;
     turn.controller = controller;
+    turn.request = request;
     const generation = turn.generation;
     const isCurrent = (): boolean => generation === turn.generation;
 
@@ -194,6 +220,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       });
       if (!isCurrent()) return;
       turn.controller = null;
+      turn.request = null;
       const saved = chatRepository.appendMessage({
         conversationId: request.conversationId,
         role: 'assistant',
@@ -214,6 +241,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Cancel and reset already orphaned their turn, so anything reaching here, an AbortError
       // included, is a real failure the user can retry.
       turn.controller = null;
+      turn.request = null;
       set((state) => ({
         pending: null,
         failures: {
@@ -222,11 +250,19 @@ export const useChatStore = create<ChatState>((set, get) => {
             conversationId: request.conversationId,
             messageId: request.userMessageId,
             question: request.question,
+            reason: 'failed',
             message: toChatErrorMessage(error),
           },
         },
       }));
     }
+  };
+
+  const findUnanswered = (conversationId: string): UnansweredQuestion | null => {
+    const failure = get().failures[conversationId];
+    if (failure) return { messageId: failure.messageId, question: failure.question };
+    const last = readMessages(conversationId).at(-1);
+    return last?.role === 'user' ? { messageId: last.id, question: last.text } : null;
   };
 
   return {
@@ -274,7 +310,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       const conversationId =
         options.conversationId ?? chatRepository.createConversation(toConversationTitle(text)).id;
-      const history = readMessages(conversationId);
+      const history = withoutUnansweredQuestions(readMessages(conversationId));
       const userMessage = chatRepository.appendMessage({ conversationId, role: 'user', text });
       set((state) => ({
         failures: withoutFailure(state.failures, conversationId),
@@ -296,46 +332,69 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     retry: async (conversationId, { allowCloudFallback }) => {
-      const { failures, pending } = get();
-      const failure = failures[conversationId];
-      if (!failure || pending) return;
+      if (get().pending) return;
+      const unanswered = findUnanswered(conversationId);
+      if (!unanswered) return;
 
       const stored = readMessages(conversationId);
-      const index = stored.findIndex((message) => message.id === failure.messageId);
+      const index = stored.findIndex((message) => message.id === unanswered.messageId);
       set((state) => ({ failures: withoutFailure(state.failures, conversationId) }));
       if (index === -1) return;
 
       await runTurn({
-        conversationId: failure.conversationId,
-        userMessageId: failure.messageId,
-        question: failure.question,
-        history: stored.slice(0, index),
+        conversationId,
+        userMessageId: unanswered.messageId,
+        question: unanswered.question,
+        history: withoutUnansweredQuestions(stored.slice(0, index)),
         allowCloudFallback,
       });
     },
 
     editFailedQuestion: (conversationId) => {
-      const failure = get().failures[conversationId];
-      if (!failure) return null;
+      // A question still being answered isn't unanswered yet.
+      if (get().pending?.conversationId === conversationId) return null;
+      const unanswered = findUnanswered(conversationId);
+      if (!unanswered) return null;
 
-      chatRepository.deleteMessage(failure.messageId);
+      chatRepository.deleteMessage(unanswered.messageId);
       // A conversation left with nothing in it would linger as an empty row under the old title, so
       // it goes, and the next send starts a new one titled from the edited question.
-      const emptied = chatRepository.getMessages(failure.conversationId).length === 0;
-      if (emptied) chatRepository.deleteConversation(failure.conversationId);
+      const emptied = chatRepository.getMessages(conversationId).length === 0;
+      if (emptied) chatRepository.deleteConversation(conversationId);
       set((state) => ({
         failures: withoutFailure(state.failures, conversationId),
         conversations: readConversations(),
-        ...(emptied && state.activeConversationId === failure.conversationId
+        ...(emptied && state.activeConversationId === conversationId
           ? { activeConversationId: null, messages: [] }
-          : { messages: state.messages.filter((message) => message.id !== failure.messageId) }),
+          : {
+              messages: state.messages.filter((message) => message.id !== unanswered.messageId),
+            }),
       }));
-      return failure.question;
+      return unanswered.question;
     },
 
     cancel: () => {
+      const { pending } = get();
+      const stopped = pending?.phase === 'working' ? turn.request : null;
       abortTurn();
-      set({ pending: null });
+      set((state) => ({
+        pending: null,
+        // A stopped question keeps its Retry, worded as stopped rather than failed.
+        ...(stopped
+          ? {
+              failures: {
+                ...state.failures,
+                [stopped.conversationId]: {
+                  conversationId: stopped.conversationId,
+                  messageId: stopped.userMessageId,
+                  question: stopped.question,
+                  reason: 'stopped',
+                  message: '',
+                },
+              },
+            }
+          : {}),
+      }));
     },
 
     deleteConversation: (id) => {

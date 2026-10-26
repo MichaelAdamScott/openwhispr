@@ -143,9 +143,68 @@ const NOTE_PUSH_ACK_FIELDS: ReadonlyArray<keyof Note> = [
 const pushRejectedKey = (localId: number): string => `note.pushRejected.${localId}`;
 
 // A short Latin term ("ai", "q3") would match inside longer words ("said", "email"), so it
-// matches whole words only. Longer terms, and those from other scripts, match anywhere, since
-// Korean particles attach to the nouns they follow.
+// matches whole words only, and a longer one only where a word starts: "more" never matches
+// "Furthermore", while "budget" still finds "budgets". Terms from other scripts match anywhere,
+// since Korean particles attach to the nouns they follow.
 const WHOLE_WORD_TERM = /^[a-z0-9]{1,2}$/;
+const LATIN_WORD_TERM = /^[\p{Script=Latin}0-9]+$/u;
+// What a word starts after: whitespace, punctuation, and the brackets, quotes (an elided "l’équipe"
+// too), slashes, dashes, tags and Markdown marks that open one. A LIKE per character skims the
+// text, where a GLOB class in front of the term would be tried at every position, several times
+// slower on notes holding the term mid-word ("report" for "port").
+const WORD_STARTS_AFTER = [
+  ' ',
+  '\u00a0',
+  '\n',
+  '\t',
+  '(',
+  '[',
+  '"',
+  "'",
+  '“',
+  '‘',
+  '’',
+  '„',
+  '‚',
+  '«',
+  '¿',
+  '¡',
+  '`',
+  '/',
+  '-',
+  '–',
+  '—',
+  '*',
+  '_',
+  '#',
+  '@',
+  ',',
+  '.',
+  ':',
+  ';',
+];
+// Transcribed speech carries no Markdown, tags or brackets, and a meeting's many segments are each
+// searched, so they look for fewer.
+const SPOKEN_WORD_STARTS_AFTER = [' ', '-', '"', "'", '’', '(', ',', '.', '—'];
+// Chinese, Japanese and Korean put no space before a Latin word ("会議でbudget"), so a term right
+// after one of their characters starts a word too: CJK punctuation, kana and ideographs, Hangul,
+// and fullwidth forms, as code point ranges.
+const CJK_CODE_POINTS: readonly (readonly [number, number])[] = [
+  [0x3000, 0x9fff],
+  [0xac00, 0xd7af],
+  [0xff00, 0xffef],
+];
+
+// Only the term's first occurrence is checked: a GLOB class in front of it would be tried at every
+// position of every note holding it mid-word. Positions line up because lower() folds ASCII only.
+const followsCjk = (column: SQLWrapper, term: string): SQL => {
+  const at = sql`instr(lower(${column}), ${term})`;
+  const before = sql`unicode(substr(${column}, ${at} - 1, 1))`;
+  return sql`(${at} > 1 AND (${sql.join(
+    CJK_CODE_POINTS.map(([low, high]) => sql`${before} BETWEEN ${low} AND ${high}`),
+    sql` OR `,
+  )}))`;
+};
 // Digits, or digit groups joined by `.`, `,` or `:` ("1.10", "10,000").
 const NUMBER_TERM = /^[0-9]+(?:[.,:][0-9]+)*$/;
 
@@ -170,9 +229,21 @@ const wholeTermPatterns = (term: string): string[] | null => {
   return [`*[^A-Za-z0-9]${letters}[^A-Za-z0-9]*`];
 };
 
+// Escape LIKE wildcards so a term such as "50%" matches literally.
+const escapeLike = (text: string): string => text.replace(/[\\%_]/g, '\\$&');
+
+const likeAny = (column: SQLWrapper, patterns: string[]): SQL =>
+  sql`(${sql.join(
+    patterns.map((pattern) => sql`${column} LIKE ${pattern} ESCAPE '\\'`),
+    sql` OR `,
+  )})`;
+
 // Search terms arrive lowercased. SQLite's LIKE folds ASCII case only, so a term with other letters
 // also looks for its capitalised form ("Übergabe" heading a title).
-const chatTermMatcher = (term: string): ((column: SQLWrapper) => SQL) => {
+const chatTermMatcher = (
+  term: string,
+  wordStartsAfter: readonly string[] = WORD_STARTS_AFTER,
+): ((column: SQLWrapper) => SQL) => {
   const globs = wholeTermPatterns(term);
   if (globs) {
     // Padding the column lets a term at its start or end meet a boundary too.
@@ -184,14 +255,19 @@ const chatTermMatcher = (term: string): ((column: SQLWrapper) => SQL) => {
   }
 
   const capitalised = `${term.charAt(0).toUpperCase()}${term.slice(1)}`;
-  const forms = /\P{ASCII}/u.test(term) && capitalised !== term ? [term, capitalised] : [term];
-  // Escape LIKE wildcards so a term such as "50%" matches literally.
-  const patterns = forms.map((form) => `%${form.replace(/[\\%_]/g, '\\$&')}%`);
+  const forms = (
+    /\P{ASCII}/u.test(term) && capitalised !== term ? [term, capitalised] : [term]
+  ).map(escapeLike);
+  const anywhere = forms.map((form) => `%${form}%`);
+  if (!LATIN_WORD_TERM.test(term)) return (column) => likeAny(column, anywhere);
+
+  // The single LIKE rules out most notes before the word starts are looked for.
+  const wordStart = forms.flatMap((form) => [
+    `${form}%`,
+    ...wordStartsAfter.map((before) => `%${escapeLike(before)}${form}%`),
+  ]);
   return (column) =>
-    sql`(${sql.join(
-      patterns.map((pattern) => sql`${column} LIKE ${pattern} ESCAPE '\\'`),
-      sql` OR `,
-    )})`;
+    sql`(${likeAny(column, anywhere)} AND (${likeAny(column, wordStart)} OR ${followsCjk(column, term)}))`;
 };
 
 // Notes carry SQLite's "YYYY-MM-DD HH:MM:SS" (UTC) or the server's ISO timestamps, so both sides go
@@ -655,23 +731,39 @@ export class LocalNotesRepository implements NotesRepository {
         : this.rankChatMatches(terms, { visible, recency, total, limit: options.limit });
     if (ranked.length === 0) return { notes: [], total: 0 };
 
+    const ids = ranked.map(({ id }) => id);
     const rows = new Map(
       this.database
         .select()
         .from(notes)
-        .where(
-          inArray(
-            notes.id,
-            ranked.map(({ id }) => id),
-          ),
-        )
+        .where(inArray(notes.id, ids))
         .all()
         .map((note) => [note.id, note]),
     );
-    return {
-      notes: ranked.flatMap(({ id }) => rows.get(id) ?? []),
-      total: ranked[0].total,
-    };
+    const found = { notes: ranked.flatMap(({ id }) => rows.get(id) ?? []), total: ranked[0].total };
+    if (terms.length === 0) return found;
+    return { ...found, transcriptMatchIds: this.findTranscriptMatches(ids, terms) };
+  }
+
+  // Scoring stops at a note's first matching field, so whether a note that matched in its title or
+  // text also matched in its transcript is asked again, for the few notes returned alone.
+  private findTranscriptMatches(noteIds: number[], terms: string[]): number[] {
+    return this.database
+      .selectDistinct({ noteId: transcriptSegments.noteId })
+      .from(transcriptSegments)
+      .where(
+        and(
+          inArray(transcriptSegments.noteId, noteIds),
+          isNull(transcriptSegments.deletedAt),
+          or(
+            ...terms.map((term) =>
+              chatTermMatcher(term, SPOKEN_WORD_STARTS_AFTER)(transcriptSegments.text),
+            ),
+          ),
+        ),
+      )
+      .all()
+      .map(({ noteId }) => noteId);
   }
 
   private rankChatMatches(
@@ -685,13 +777,14 @@ export class LocalNotesRepository implements NotesRepository {
   ): { id: number; total: number }[] {
     const termScores = terms.map((term) => {
       const matches = chatTermMatcher(term);
+      const spoken = chatTermMatcher(term, SPOKEN_WORD_STARTS_AFTER);
       // notes.transcript is JSON, whose keys ("source", "text", "speaker") would match every
       // meeting, so a transcript is searched through its segments' text.
       const inTranscript = sql`EXISTS (
         SELECT 1 FROM ${transcriptSegments}
         WHERE ${transcriptSegments.noteId} = ${notes.id}
           AND ${transcriptSegments.deletedAt} IS NULL
-          AND ${matches(transcriptSegments.text)}
+          AND ${spoken(transcriptSegments.text)}
       )`;
       return sql`(CASE WHEN ${matches(notes.title)} THEN 2
         WHEN ${matches(notes.content)} OR ${matches(notes.enhancedContent)} OR ${inTranscript} THEN 1

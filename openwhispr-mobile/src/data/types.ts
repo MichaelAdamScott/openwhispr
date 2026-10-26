@@ -153,6 +153,8 @@ export interface ConflictedNote {
 export interface ChatCandidateNotes {
   notes: Note[];
   total: number;
+  /** The returned notes whose transcript matches a term, so their matching lines can be sent. */
+  transcriptMatchIds?: number[];
 }
 
 /** A period a chat question names: the notes created from `start` up to (not including) `end`. */

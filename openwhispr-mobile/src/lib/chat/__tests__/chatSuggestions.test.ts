@@ -72,6 +72,33 @@ describe('buildChatSuggestions', () => {
     ).toBe('Prep me for Design review');
   });
 
+  it('skips a meeting that has already ended', () => {
+    const shortCall = {
+      ...makeEvent('Quick sync', new Date(2026, 9, 22, 8, 48)),
+      endAt: new Date(2026, 9, 22, 8, 58).toISOString(),
+    };
+    expect(labels([shortCall])).toEqual(STATIC_LABELS);
+  });
+
+  it('skips a meeting the user declined, and keeps one someone else declined', () => {
+    const attendees = (selfStatus: string): string =>
+      JSON.stringify([
+        { email: 'me@example.com', self: true, responseStatus: selfStatus },
+        { email: 'sam@example.com', responseStatus: 'declined' },
+      ]);
+    const declined = {
+      ...makeEvent('Budget review', new Date(2026, 9, 22, 11, 0)),
+      attendeesJson: attendees('declined'),
+    };
+    const accepted = {
+      ...makeEvent('Design review', new Date(2026, 9, 22, 14, 0)),
+      attendeesJson: attendees('accepted'),
+    };
+
+    expect(labels([declined])).toEqual(STATIC_LABELS);
+    expect(labels([declined, accepted])[0]).toBe('Prep me for Design review');
+  });
+
   it('names an untitled meeting', () => {
     expect(labels([makeEvent('  ', new Date(2026, 9, 22, 11, 0))])[0]).toBe(
       'Prep me for Untitled meeting',

@@ -9,14 +9,39 @@ export const CHAT_CONNECTION_ERROR_MESSAGE = 'Check your connection and try agai
 export const CHAT_ON_DEVICE_UNAVAILABLE_MESSAGE = 'On-device AI isn’t available right now.';
 export const CHAT_CONTEXT_LIMIT_MESSAGE =
   'This question needs more context than on-device AI can handle. Try a shorter question or start a new chat.';
+// Note chat has already retried with less of the note by then, so the note itself is what's too big.
+export const NOTE_CHAT_CONTEXT_LIMIT_MESSAGE = 'This note is too long for on-device AI.';
+export const CHAT_GUARDRAIL_MESSAGE =
+  'On-device AI declined to answer this. Try rephrasing your question.';
+export const CHAT_OUTPUT_LIMIT_MESSAGE =
+  'The answer was too long for on-device AI. Try a narrower question.';
+export const CHAT_NOTES_READ_ERROR_MESSAGE = 'Couldn’t read your notes. Try again.';
 
 const ORGANIZATION_POLICY_PREFIX = 'Your organization';
 
+/** The turn couldn't search or read the notes on this phone, so nothing left it. */
+export class ChatNotesReadError extends Error {
+  readonly cause?: unknown;
+
+  constructor(cause?: unknown) {
+    super('Could not read notes for chat');
+    this.name = 'ChatNotesReadError';
+    this.cause = cause;
+  }
+}
+
+export interface ChatErrorMessageOptions {
+  surface?: 'chat' | 'noteChat';
+}
+
 // On-device requests never touch the network, so none of them reads as a connection problem.
 // LOCAL_REASONING_UNAVAILABLE carries copy written from the device's readiness (Apple Intelligence
-// off, model still downloading, ...) that says what to do, so it is shown as is.
+// off, model still downloading, ...) that says what to do, so it is shown as is. A guardrail or an
+// output limit gives the same answer on a retry, so their copy says what to change instead.
 const toLocalReasoningMessage = (error: LocalReasoningError): string => {
   if (error.code === 'APPLE_LLM_UNSUPPORTED_LANGUAGE') return UNSUPPORTED_LANGUAGE_MESSAGE;
+  if (error.code === 'APPLE_LLM_GUARDRAIL') return CHAT_GUARDRAIL_MESSAGE;
+  if (error.code === 'APPLE_LLM_OUTPUT_LIMIT') return CHAT_OUTPUT_LIMIT_MESSAGE;
   if (error.code === 'LOCAL_REASONING_UNAVAILABLE' && error.message.trim()) return error.message;
   return CHAT_ON_DEVICE_UNAVAILABLE_MESSAGE;
 };
@@ -24,9 +49,15 @@ const toLocalReasoningMessage = (error: LocalReasoningError): string => {
 // Provider and network errors carry raw text that means nothing to the user, so only the cases
 // with something to act on get their own copy; timeouts, fetch failures and the rest read as a
 // connection problem.
-export const toChatErrorMessage = (error: unknown): string => {
-  if (isLocalContextLimitError(error)) return CHAT_CONTEXT_LIMIT_MESSAGE;
+export const toChatErrorMessage = (
+  error: unknown,
+  { surface = 'chat' }: ChatErrorMessageOptions = {},
+): string => {
+  if (isLocalContextLimitError(error)) {
+    return surface === 'noteChat' ? NOTE_CHAT_CONTEXT_LIMIT_MESSAGE : CHAT_CONTEXT_LIMIT_MESSAGE;
+  }
   if (error instanceof LocalReasoningError) return toLocalReasoningMessage(error);
+  if (error instanceof ChatNotesReadError) return CHAT_NOTES_READ_ERROR_MESSAGE;
   if (error instanceof Error && error.message.startsWith(ORGANIZATION_POLICY_PREFIX)) {
     return error.message;
   }

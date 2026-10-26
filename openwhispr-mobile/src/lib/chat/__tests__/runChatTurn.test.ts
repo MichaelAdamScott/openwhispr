@@ -6,6 +6,7 @@ import type {
   Note,
 } from '@/data';
 import { LocalReasoningError } from '@/lib/localReasoning';
+import { ChatNotesReadError, toChatErrorMessage } from '../chatErrorMessage';
 import {
   createDefaultChatTurnDeps,
   runChatTurn,
@@ -350,7 +351,7 @@ describe('runChatTurn', () => {
       ]);
       expect(result.sources.map((source) => source.noteId)).toEqual([20]);
       expect(searchDetail(input)).toBe('1 note matches');
-      expect(sentText(deps.chat)).toMatch(/\nNOTES:\n### Pricing call \(updated /);
+      expect(sentText(deps.chat)).toMatch(/\nNOTES:\n<notes>\n### Pricing call \(updated /);
     });
 
     it('reads the “recently” period when no note anywhere matches', async () => {
@@ -622,6 +623,35 @@ describe('runChatTurn', () => {
     expect(sentText(deps.chat)).toContain('The hiring freeze holds.');
   });
 
+  it('sends the matching lines of a note found through its transcript, ahead of its summary', async () => {
+    const meeting = makeNote({
+      id: 3,
+      title: 'Platform sync',
+      noteType: 'meeting',
+      enhancedContent: 'We reviewed the quarter.',
+    });
+    const getNoteTranscript = jest.fn(() =>
+      [
+        'Meeting transcript:',
+        '[00:00] Sam: Lunch is at noon.',
+        '[00:10] Dana: The SSO bug is fixed in staging.',
+      ].join('\n'),
+    );
+    const getCandidateNotes = jest.fn(
+      (): ChatCandidateNotes => ({ notes: [meeting, PRICING], total: 2, transcriptMatchIds: [3] }),
+    );
+    const deps = makeDeps({ getCandidateNotes, getNoteTranscript });
+
+    await runChatTurn(makeInput({ question: 'What did Dana say about the SSO bug?' }), deps);
+
+    // Only the note that matched in its transcript has it read.
+    expect(getNoteTranscript.mock.calls).toEqual([[3]]);
+    expect(sentText(deps.chat)).toContain(
+      'Transcript passages matching the question:\n[00:10] Dana: The SSO bug is fixed in staging.\n\nGenerated notes:\nWe reviewed the quarter.',
+    );
+    expect(sentText(deps.chat)).not.toContain('Lunch is at noon.');
+  });
+
   it('formats a transcript from the note’s segments and speakers', () => {
     mockGetSegments.mockReturnValueOnce([
       {
@@ -858,6 +888,57 @@ describe('runChatTurn', () => {
 
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
     expect(deps.chat).not.toHaveBeenCalled();
+  });
+
+  // Hermes has no DOMException global.
+  it('stops after an abort without a DOMException global', async () => {
+    const original = globalThis.DOMException;
+    const scope = globalThis as { DOMException?: typeof DOMException };
+    delete scope.DOMException;
+    try {
+      const controller = new AbortController();
+      controller.abort();
+      const deps = makeDeps();
+
+      await expect(
+        runChatTurn(makeInput({ signal: controller.signal }), deps),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(deps.chat).not.toHaveBeenCalled();
+    } finally {
+      scope.DOMException = original;
+    }
+  });
+
+  describe('when the notes can’t be read', () => {
+    const fail = (): never => {
+      throw new Error('database is locked');
+    };
+
+    it.each<[string, Partial<ChatTurnDeps>]>([
+      ['the search', { getCandidateNotes: jest.fn(fail) }],
+      [
+        'a transcript',
+        {
+          getCandidateNotes: candidatesFrom([makeNote({ id: 3, title: 'Weekly sync' })]),
+          getNoteTranscript: jest.fn(fail),
+        },
+      ],
+      ['an earlier answer’s source', { isNotePrivate: jest.fn(fail) }],
+    ])('reports %s failing as a local read, and sends nothing', async (_, overrides) => {
+      const deps = makeDeps(overrides);
+      const history = [
+        makeMessage('m1', 'user', 'Price?'),
+        makeMessage('m2', 'assistant', '$12.', [{ noteId: 1, title: 'Pricing call' }]),
+      ];
+
+      const error = await runChatTurn(makeInput({ history }), deps).catch(
+        (caught: unknown) => caught,
+      );
+
+      expect(error).toBeInstanceOf(ChatNotesReadError);
+      expect(toChatErrorMessage(error)).toBe('Couldn’t read your notes. Try again.');
+      expect(deps.chat).not.toHaveBeenCalled();
+    });
   });
 
   it('does not retry or resolve once aborted during the model call', async () => {

@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Keyboard, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Keyboard,
+  ScrollView,
+  StyleSheet,
+  View,
+  type TextInput,
+} from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TabScreenHeader } from '@/components/ui/TabScreenHeader';
@@ -14,6 +21,7 @@ import { ChatUserBubble } from '@/components/chat/ChatUserBubble';
 import { ChatWatermark } from '@/components/chat/ChatWatermark';
 import { useChatSendGate } from '@/hooks/useChatSendGate';
 import { useChatVoiceInput } from '@/hooks/useChatVoiceInput';
+import { useCloudTranscriptionGate } from '@/hooks/useCloudTranscriptionGate';
 import { chatTabGateOptions } from '@/lib/chat/chatConsent';
 import { withSpokenQuestion } from '@/lib/chat/chatDraft';
 import {
@@ -45,6 +53,7 @@ export function ChatConversationScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const [draft, setDraft] = useState('');
+  const inputRef = useRef<TextInput>(null);
   const focusedRef = useRef(false);
   const nearBottomRef = useRef(true);
   const wasWorkingRef = useRef(false);
@@ -75,6 +84,7 @@ export function ChatConversationScreen(): React.JSX.Element {
   const sendBlocked = useChatStore((s) => s.sendBlockedByWipe);
   const activeMode = useProcessingModeStore((s) => s.activeMode);
   const { chatEnabled, gate } = useChatSendGate();
+  const gateTranscription = useCloudTranscriptionGate();
   const isFocused = useCallback((): boolean => focusedRef.current, []);
 
   // router.setParams acts on whichever screen is focused, so a popped or covered new chat whose
@@ -151,17 +161,23 @@ export function ChatConversationScreen(): React.JSX.Element {
   const gateOptions = chatTabGateOptions(activeMode);
   const workingHere = pendingHere?.phase === 'working';
   const lastMessage = messages.at(-1);
+  // Read from the saved messages, so a question stopped, failed or cut off by a relaunch keeps its
+  // Retry; the failure record, held in memory, only says why.
+  const unansweredHere =
+    !pendingHere && (failureHere !== undefined || lastMessage?.role === 'user');
+  const unansweredReason = failureHere?.reason ?? 'unanswered';
 
   // A new message or a change of phase always brings the end into view.
   useEffect(() => {
     nearBottomRef.current = true;
-  }, [messages.length, pendingHere?.phase, failureHere]);
+  }, [messages.length, pendingHere?.phase, failureHere, unansweredHere]);
 
   // The answer and the error arrive out of sight of a screen reader, so they're announced, but
   // only by the chat on screen.
   useEffect(() => {
     if (wasWorkingRef.current && !workingHere && focusedRef.current) {
-      if (failureHere) {
+      // A stopped answer was the user's own doing, so there's nothing to announce.
+      if (failureHere?.reason === 'failed') {
         AccessibilityInfo.announceForAccessibility(
           `Couldn’t get an answer. ${failureHere.message}`,
         );
@@ -208,7 +224,12 @@ export function ChatConversationScreen(): React.JSX.Element {
     if (!conversationId || voice.state !== 'idle') return;
     // Editing the only question deletes the chat, which leaves a new chat for the next send.
     const question = useChatStore.getState().editFailedQuestion(conversationId);
-    if (question !== null) setDraft(question);
+    if (question === null) return;
+    // Whatever is already typed stays, ahead of the question.
+    setDraft((current) =>
+      current.trim() === question.trim() ? current : withSpokenQuestion(current, question),
+    );
+    inputRef.current?.focus();
   };
 
   const openNote = (noteId: number): void => {
@@ -281,9 +302,10 @@ export function ChatConversationScreen(): React.JSX.Element {
             isFocused={isFocused}
           />
         ) : null}
-        {failureHere ? (
+        {unansweredHere ? (
           <ChatErrorRow
-            message={failureHere.message}
+            reason={unansweredReason}
+            message={failureHere?.message}
             disabled={errorActionsDisabled}
             onRetry={handleRetry}
             onEdit={handleEditQuestion}
@@ -301,11 +323,17 @@ export function ChatConversationScreen(): React.JSX.Element {
         disabled={!chatEnabled}
         onSend={handleSend}
         onMicPress={(startVoice) => {
-          if (!busy) gate(startVoice, gateOptions);
+          if (!busy) {
+            gate(
+              (allowCloudFallback) => gateTranscription(() => startVoice(allowCloudFallback)),
+              gateOptions,
+            );
+          }
         }}
         onCancelTurn={() => useChatStore.getState().cancel()}
         restingBottomPadding={Math.max(insets.bottom, 14)}
         notice={composerNotice}
+        inputRef={inputRef}
       />
     </View>
   );

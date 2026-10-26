@@ -251,6 +251,14 @@ jest.mock('@/components/ui/SystemIcon', () => ({
   SystemIcon: () => null,
 }));
 
+jest.mock('@/components/ui/GlassBackButton', () => ({
+  GlassBackButton: ({ fallbackRoute }: { fallbackRoute?: string }) =>
+    (() => {
+      const { Text: MockText } = require('react-native');
+      return <MockText testID="back-button">{fallbackRoute}</MockText>;
+    })(),
+}));
+
 jest.mock('@/components/notes/NoteActionsMenu', () => ({
   NoteActionsMenu: ({
     actions,
@@ -371,6 +379,7 @@ jest.mock('@/components/notes/MoveToFolderSheet', () => ({
 jest.mock('@/components/notes/NoteChatSheet', () => ({
   NoteChatSheet: ({
     draft,
+    error,
     canSend,
     suggestions,
     onDraftChange,
@@ -379,6 +388,7 @@ jest.mock('@/components/notes/NoteChatSheet', () => ({
     onClose,
   }: {
     draft: string;
+    error: string | null;
     canSend: boolean;
     suggestions: readonly { label: string; prompt: string }[];
     onDraftChange: (text: string) => void;
@@ -389,11 +399,13 @@ jest.mock('@/components/notes/NoteChatSheet', () => ({
     (() => {
       const {
         Pressable: MockPressable,
+        Text: MockText,
         TextInput: MockTextInput,
         View: MockView,
       } = require('react-native');
       return (
         <MockView>
+          {error ? <MockText testID="chat-error">{error}</MockText> : null}
           <MockTextInput testID="chat-draft" value={draft} onChangeText={onDraftChange} />
           <MockPressable
             testID="chat-send"
@@ -852,6 +864,52 @@ describe('NoteEditorScreen note chat', () => {
       await Promise.resolve();
     });
     expect(ReasoningService.chatOverNote).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('NoteEditorScreen note chat errors', () => {
+  it('words an on-device failure in note chat instead of showing the native text', async () => {
+    const chatErrorMessage = jest.requireActual('@/lib/chat/chatErrorMessage');
+    const toChatErrorMessage = jest.spyOn(chatErrorMessage, 'toChatErrorMessage');
+    (ReasoningService.chatOverNote as jest.Mock).mockRejectedValueOnce(
+      new LocalReasoningError('APPLE_LLM_FAILED', 'GenerationError -1'),
+    );
+    const { getByTestId, findByTestId } = render(<NoteEditorScreen />);
+    await act(async () => {
+      fireEvent.press(getByTestId('chat-suggestion-List action items'));
+    });
+
+    expect((await findByTestId('chat-error')).props.children).toBe(
+      chatErrorMessage.CHAT_ON_DEVICE_UNAVAILABLE_MESSAGE,
+    );
+    expect(toChatErrorMessage).toHaveBeenCalledWith(expect.any(LocalReasoningError), {
+      surface: 'noteChat',
+    });
+    toChatErrorMessage.mockRestore();
+  });
+
+  it('shows another failure’s own text', async () => {
+    (ReasoningService.chatOverNote as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+    const { getByTestId, findByTestId } = render(<NoteEditorScreen />);
+    await act(async () => {
+      fireEvent.press(getByTestId('chat-suggestion-List action items'));
+    });
+    expect((await findByTestId('chat-error')).props.children).toBe('offline');
+  });
+});
+
+describe('NoteEditorScreen missing note', () => {
+  it('keeps a way back when the note is gone, on either stack', () => {
+    mockNotesState.notes = [];
+    mockRouteNoteId = '99';
+    const { getByText, getByTestId, rerender } = render(<NoteEditorScreen />);
+    expect(getByText('Note not found')).toBeTruthy();
+    expect(getByTestId('back-button').props.children).toBe('/(tabs)/(notes)');
+
+    rerender(
+      <NoteEditorScreen stack={{ root: '/(tabs)/(chat)', routePrefix: '/(tabs)/(chat)/note' }} />,
+    );
+    expect(getByTestId('back-button').props.children).toBe('/(tabs)/(chat)');
   });
 });
 

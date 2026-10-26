@@ -274,6 +274,81 @@ describe('Chat questions through the real search', () => {
     });
   });
 
+  describe('a follow-up or a schedule question', () => {
+    // Notes that say the words such questions are asked with, inside other words too.
+    const seedChatter = (seed: Seed): void => {
+      seed('Groceries list', 'Buy more oat milk.', new Date(2026, 8, 1, 9, 0));
+      seed('Journal', 'Furthermore, it rained.', new Date(2026, 8, 2, 9, 0));
+      seed(
+        'Standup',
+        'Thanks all. Sam said time is tight; next meeting tomorrow, last call on the calendar. Can someone explain again? Free after 3.',
+        new Date(2026, 8, 3, 9, 0),
+        'meeting',
+      );
+    };
+
+    it.each([
+      'Tell me more',
+      'When is my next meeting?',
+      'Thanks!',
+      'Can you explain that again?',
+      'Who said that?',
+      'What time is it?',
+      'What do I have tomorrow?',
+      'What is on my calendar?',
+      'Summarize the last meeting',
+      'Am I free after 3?',
+    ])('sends no notes for “%s”', async (question) => {
+      const { deps, seed } = setUp();
+      seedChatter(seed);
+      expect(await sourcesFor(question, deps)).toEqual([]);
+    });
+
+    it.each<[string, keyof ReturnType<typeof setUp>['ids']]>([
+      ['What did Dana say about the contract?', 'contractCall'],
+      ['When is the Acme renewal due?', 'acmeKickoff'],
+      ['What did we decide about the paint?', 'oldDecision'],
+    ])('still finds the note “%s” is about', async (question, note) => {
+      const { deps, ids, seed } = setUp();
+      seedChatter(seed);
+      expect(await sourcesFor(question, deps)).toEqual([ids[note]]);
+    });
+  });
+
+  it('sends the lines of a meeting found through what was said in it', async () => {
+    const { repo, db } = createMemoryRepository();
+    const { id } = repo.createNote('Platform sync', '');
+    db.update(notes)
+      .set({ noteType: 'meeting', enhancedContent: 'We reviewed the quarter.' })
+      .where(eq(notes.id, id))
+      .run();
+    repo.replaceSegments(id, [
+      { noteId: id, startMs: 0, endMs: 1000, text: 'Lunch is at noon.' },
+      { noteId: id, startMs: 1000, endMs: 2000, text: 'The SSO bug is fixed in staging.' },
+    ]);
+    const chat = jest.fn(async () => ({ text: 'The answer.', model: 'test' }));
+    const deps: ChatTurnDeps = {
+      getCandidateNotes: (terms, options) => repo.getChatCandidateNotes(terms, options),
+      isNotePrivate: () => false,
+      getNoteTranscript: (noteId) =>
+        repo
+          .getSegments(noteId)
+          .map((segment) => segment.text)
+          .join('\n'),
+      getConnectedCalendarAccounts: () => [],
+      getCalendarEvents: () => [],
+      chat,
+      getChatSelection: () => ({ mode: 'openwhispr' }),
+    };
+
+    expect(await sourcesFor('Is the SSO bug fixed?', deps)).toEqual([id]);
+    const text = (chat as jest.Mock).mock.calls[0][0].text;
+    expect(text).toContain(
+      'Transcript passages matching the question:\nThe SSO bug is fixed in staging.\n\nGenerated notes:\nWe reviewed the quarter.',
+    );
+    expect(text).not.toContain('Lunch is at noon.');
+  });
+
   it.each([
     // Only the number can find these notes.
     ['What ships in 1.10?', 'Release', 'Version 1.10 adds export.'],

@@ -38,6 +38,7 @@ interface ChatComposerProps {
   listening?: ChatComposerListening | null;
   /** Set while a spoken question is transcribed, which the input says. */
   transcribing?: boolean;
+  inputRef?: React.Ref<TextInput>;
 }
 
 const WAVEFORM_BARS = 14;
@@ -92,6 +93,7 @@ export function ChatComposer({
   onStop,
   listening = null,
   transcribing = false,
+  inputRef,
 }: ChatComposerProps): React.JSX.Element {
   const hasText = value.trim().length > 0;
   // A turn the screen doesn't own still locks it, since only one turn runs at a time.
@@ -118,6 +120,7 @@ export function ChatComposer({
         <View className={`flex-1 justify-end ${fieldHeight}`}>{field}</View>
       ) : (
         <TextInput
+          ref={inputRef}
           accessibilityLabel={inputLabel}
           value={value}
           onChangeText={onChangeText}

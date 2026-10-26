@@ -13,6 +13,7 @@ import { TAB_BAR_CLEARANCE } from '@/components/ui/tabBarClearance';
 import { calendarRepository } from '@/data';
 import { useChatSendGate } from '@/hooks/useChatSendGate';
 import { useChatVoiceInput } from '@/hooks/useChatVoiceInput';
+import { useCloudTranscriptionGate } from '@/hooks/useCloudTranscriptionGate';
 import { getAccountFirstName } from '@/lib/accountDisplay';
 import { getMeetingCalendarEventSuggestions } from '@/lib/calendar/meetingSuggestions';
 import { chatTabGateOptions } from '@/lib/chat/chatConsent';
@@ -65,6 +66,7 @@ export function ChatHomeScreen(): React.JSX.Element {
   const firstName = useAuthStore((s) => getAccountFirstName(s.user));
   const activeMode = useProcessingModeStore((s) => s.activeMode);
   const { chatEnabled, gate } = useChatSendGate();
+  const gateTranscription = useCloudTranscriptionGate();
   const voice = useChatVoiceInput({
     conversationId: null,
     // A question still transcribing when Home lost focus is sent, but doesn't pull the user back.
@@ -184,7 +186,12 @@ export function ChatHomeScreen(): React.JSX.Element {
             disabled={false}
             onSend={() => ask(draft, true)}
             onMicPress={(startVoice) => {
-              if (!busy) gate(startVoice, gateOptions);
+              if (!busy) {
+                gate(
+                  (allowCloudFallback) => gateTranscription(() => startVoice(allowCloudFallback)),
+                  gateOptions,
+                );
+              }
             }}
             onCancelTurn={() => useChatStore.getState().cancel()}
             restingBottomPadding={TAB_BAR_CLEARANCE}

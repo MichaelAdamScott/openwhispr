@@ -21,7 +21,7 @@ import type { UsageLimitError } from '@/lib/usageLimitError';
 export interface ChatVoiceInput {
   state: 'idle' | 'listening' | 'transcribing';
   elapsedSeconds: number;
-  // A cancelled question is still being transcribed in the background, so the mic refuses.
+  // A cancelled question's transcription request is still under way, so the mic refuses.
   isSettling: boolean;
   // Briefly true after a question in which no speech was heard, so the screen can say so.
   noSpeechHeard: boolean;
@@ -60,6 +60,12 @@ const currentGateRoute = (): string => {
   return `${isChatEnabled(config)}:${config?.inference?.noteChat?.mode ?? ''}:${
     useProcessingModeStore.getState().activeMode
   }`;
+};
+
+const refreshCloudUsage = (): void => {
+  if (useProcessingModeStore.getState().activeMode === 'cloud') {
+    useUsageStore.getState().load(true);
+  }
 };
 
 export function useChatVoiceInput({
@@ -148,11 +154,15 @@ export function useChatVoiceInput({
 
   const recording = useAudioRecording({
     saveToHistory: false,
+    // A spoken question goes to the chat as it was said: dictation cleanup would rewrite it, and in
+    // Local Mode its Cloud default would take it off this iPhone on a route the chat never offered.
+    cleanup: false,
+    // A stopped question gets no transcription retries, so the mic is back once the request
+    // already under way ends, and nothing more is spent on it.
+    shouldCancel: isStopped,
     onComplete: (text) => {
       // The words were spent even if the transcript is dropped below.
-      if (useProcessingModeStore.getState().activeMode === 'cloud') {
-        useUsageStore.getState().load(true);
-      }
+      refreshCloudUsage();
       sendTranscript(text);
     },
     onError: (error) => {
@@ -263,6 +273,9 @@ export function useChatVoiceInput({
     const slot = slotRef.current;
     try {
       await recording.stopRecording();
+      // A question stopped after its transcription came back never reaches onComplete, but the
+      // words were still spent.
+      if (isStopped()) refreshCloudUsage();
     } catch {
       // Failures already reached onError.
     } finally {

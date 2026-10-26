@@ -48,6 +48,13 @@ export interface UseAudioRecordingOptions {
     error: UsageLimitError,
     retryWithCloud: () => Promise<void>,
   ) => void | Promise<void>;
+  // Defaults to true. When false the recording gets its raw transcript back: no cleanup pass,
+  // fused or separate, and no snippet expansion, so nothing rewrites it or takes it to a cleanup
+  // route its transcription never used.
+  cleanup?: boolean;
+  // Polled from the moment the recording stops. Once it returns true, transcription retries and
+  // cleanup stop and the recording is discarded without reaching history, onComplete or onError.
+  shouldCancel?: () => boolean;
 }
 
 type RetainedRecordingAudio = {
@@ -56,6 +63,10 @@ type RetainedRecordingAudio = {
   audioFileName?: string;
   audioMimeType?: string;
 };
+
+// Marks cleanup unavailable for a recording without cleanup: the job then skips the fused cloud
+// cleanup and the separate pass alike, even with the cleanup route it fills in for itself.
+const CLEANUP_OFF = 'Cleanup is off for this recording.';
 
 const fileNameFromUri = (uri: string): string | undefined => uri.split('/').pop() || undefined;
 
@@ -80,12 +91,17 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
   // Held only across a native stop: whichever stop or cancel claims it owns the recording, so a
   // second one never stops it again or deletes the file the first is transcribing.
   const stoppingRef = useRef(false);
+  // Whether the recording this hook started is still open. A call or Siri pauses the recorder,
+  // which then reports not recording, so cancel can't read that from the recorder.
+  const openRef = useRef(false);
 
   const recorderOptions = getDefaultRecorderOptions();
   const audioRecorder = useAudioRecorder(recorderOptions);
   const isSupported = isExpoAudioAvailable() && !!audioRecorder;
   const allowsBackgroundRecording = options.allowsBackgroundRecording === true;
   const saveToHistory = options.saveToHistory !== false;
+  const cleanup = options.cleanup !== false;
+  const isCancelled = (): boolean => options.shouldCancel?.() === true;
 
   const ensureAudioSupport = () => {
     if (!isSupported || !expoAudio || !audioRecorder) {
@@ -150,9 +166,12 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
         } catch {}
       }
 
-      jobRouteRef.current = snapshotTranscriptionJob('dictation');
+      jobRouteRef.current = cleanup
+        ? snapshotTranscriptionJob('dictation')
+        : { ...snapshotTranscriptionJob('dictation', []), cleanupUnavailable: CLEANUP_OFF };
       await recorder.prepareToRecordAsync(recorderOptions);
       await recorder.record();
+      openRef.current = true;
 
       setIsRecording(true);
       setCurrentText('');
@@ -180,6 +199,7 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
       stoppingRef.current = true;
       try {
         await recorder.stop();
+        openRef.current = false;
       } finally {
         stoppingRef.current = false;
       }
@@ -225,6 +245,10 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
       try {
         await finalizeRecording(retained, transcriptionProvider, clientTranscriptionId);
       } catch (transcribeError) {
+        if (isCancelled()) {
+          await discardRetainedAudio(retained);
+          return;
+        }
         if (isNoSpeechError(transcribeError)) {
           await deleteManagedTranscriptAudio(retained.audioUrl);
           throw new Error(NO_SPEECH_ERROR_MESSAGE);
@@ -269,6 +293,7 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
         throw transcribeError;
       }
     } catch (error) {
+      if (isCancelled()) return;
       options.onError?.(error as Error);
       throw error;
     } finally {
@@ -324,6 +349,10 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
     provider: TranscriptionProvider,
     clientTranscriptionId: string,
   ) => {
+    if (isCancelled()) {
+      await discardRetainedAudio(retained);
+      return;
+    }
     const processedResult = await transcribeAndCleanup(
       {
         ...jobRouteRef.current,
@@ -341,14 +370,19 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
       },
       {
         onRawTranscript: (text) => setCurrentText(text),
+        shouldCancel: isCancelled,
       },
     );
 
-    if (!processedResult.text.trim()) {
+    if (isCancelled()) {
+      await discardRetainedAudio(retained);
+      return;
+    }
+    // Snippets expand only the final text; originalText stays the transcript as heard.
+    const finalText = cleanup ? processedResult.text : processedResult.originalText;
+    if (!finalText.trim()) {
       throw new Error(NO_SPEECH_ERROR_MESSAGE);
     }
-
-    const finalText = processedResult.text;
 
     if (!saveToHistory) {
       await discardRetainedAudio(retained);
@@ -392,9 +426,15 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
     try {
       // The private-mode snapshot pinned local text stages; a consented Cloud
       // upload should clean the way a Cloud recording would.
-      jobRouteRef.current = { provider: 'cloud', ...snapshotTextInference('cloud') };
+      jobRouteRef.current = cleanup
+        ? { provider: 'cloud', ...snapshotTextInference('cloud') }
+        : { provider: 'cloud', cleanupUnavailable: CLEANUP_OFF };
       await finalizeRecording(retained, 'cloud', clientTranscriptionId);
     } catch (error) {
+      if (isCancelled()) {
+        await discardRetainedAudio(retained);
+        return;
+      }
       if (isUsageLimitError(error) && options.onUsageLimitReached) {
         await options.onUsageLimitReached(error, () =>
           retryWithCloud(retained, clientTranscriptionId),
@@ -420,7 +460,7 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
   // the recording is gone, so a send landing meanwhile can't stop it again and read the deleted file.
   const cancelRecording = async (): Promise<void> => {
     if (stoppingRef.current) return;
-    if (!audioRecorder?.isRecording) {
+    if (!audioRecorder || (!audioRecorder.isRecording && !openRef.current)) {
       setIsRecording(false);
       return;
     }
@@ -428,7 +468,14 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
     // Read before stopping: the recorder may move on to a new file once it stops.
     const uri = audioRecorder.uri;
     try {
-      await audioRecorder.stop();
+      const paused = !audioRecorder.isRecording;
+      try {
+        // A paused recorder ignores cancel; stopping it finishes the file so it can be deleted.
+        await audioRecorder.stop();
+      } catch (stopError) {
+        if (!paused) throw stopError;
+      }
+      openRef.current = false;
       if (uri) {
         await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
       }
@@ -446,6 +493,7 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
     stoppingRef.current = true;
     try {
       await audioRecorder.stop();
+      openRef.current = false;
     } finally {
       stoppingRef.current = false;
     }

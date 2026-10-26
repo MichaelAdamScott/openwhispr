@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { View } from 'react-native';
+import { View, type TextInput } from 'react-native';
 import type { ChatVoiceInput } from '@/hooks/useChatVoiceInput';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { NO_SPEECH_ERROR_MESSAGE } from '@/lib/permissions';
@@ -38,6 +38,7 @@ interface ChatInputBarProps {
   accessory?: React.ReactNode;
   /** A line above the composer, e.g. naming the chat that's working. */
   notice?: React.ReactNode;
+  inputRef?: React.Ref<TextInput>;
 }
 
 /** The composer, which also listens to a spoken question, kept above the keyboard. */
@@ -57,6 +58,7 @@ export function ChatInputBar({
   restingBottomPadding,
   accessory,
   notice,
+  inputRef,
 }: ChatInputBarProps): React.JSX.Element {
   const keyboardHeight = useKeyboardHeight();
   const finishedAtRef = useRef(0);
@@ -112,6 +114,7 @@ export function ChatInputBar({
             : null
         }
         transcribing={voice.state === 'transcribing'}
+        inputRef={inputRef}
       />
     </View>
   );

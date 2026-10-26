@@ -47,6 +47,13 @@ jest.mock('@/hooks/useChatSendGate', () => ({
     gate: (run: (allowCloudFallback: boolean) => void) => run(false),
   }),
 }));
+let mockTranscriptionAllowed = true;
+const mockGateTranscription = jest.fn((run: () => void) => {
+  if (mockTranscriptionAllowed) run();
+});
+jest.mock('@/hooks/useCloudTranscriptionGate', () => ({
+  useCloudTranscriptionGate: () => mockGateTranscription,
+}));
 jest.mock('@/hooks/useChatVoiceInput', () => ({
   useChatVoiceInput: (options: { onSent?: (conversationId: string) => void }) => {
     mockOnSent = options.onSent;
@@ -100,6 +107,7 @@ beforeEach(() => {
   mockOnSent = undefined;
   mockChatEnabled = true;
   mockEvents = [];
+  mockTranscriptionAllowed = true;
   jest.clearAllMocks();
   useChatStore.setState({
     conversations: [],
@@ -124,6 +132,19 @@ describe('ChatHomeScreen', () => {
       allowCloudFallback: false,
     });
     expect(router.push).toHaveBeenCalledWith('/(tabs)/(chat)/c9');
+  });
+
+  it('checks cloud transcription before opening the mic', async () => {
+    const screen = await renderHome();
+
+    mockTranscriptionAllowed = false;
+    fireEvent.press(screen.getByLabelText('Speak your question'));
+    expect(mockGateTranscription).toHaveBeenCalledTimes(1);
+    expect(mockVoice.start).not.toHaveBeenCalled();
+
+    mockTranscriptionAllowed = true;
+    fireEvent.press(screen.getByLabelText('Speak your question'));
+    expect(mockVoice.start).toHaveBeenCalledWith(false);
   });
 
   it('shows Chat turned off, keeping All chats', async () => {

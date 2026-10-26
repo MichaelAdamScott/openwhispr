@@ -8,6 +8,7 @@ import type {
 import type { InferenceRoute, InferenceSelection } from '@/lib/mobileProviders';
 import { isLocalContextLimitError } from '@/lib/localReasoning';
 import { tryParseNoteTimestamp } from '@/lib/parseNoteTimestamp';
+import { abortError } from '@/services/providers/NativeProviderTransport';
 import type { ReasoningResponse, ReasoningRoutingOptions } from '@/types';
 import {
   buildChatPayload,
@@ -22,6 +23,7 @@ import {
   type ChatQuery,
   type ChatTimeScope,
 } from './chatContext';
+import { ChatNotesReadError } from './chatErrorMessage';
 import type { ChatMessage, ChatSource, ChatStep, ChatStepId } from './types';
 
 const MAX_MATCHED_NOTES = 4;
@@ -131,8 +133,19 @@ export const createDefaultChatTurnDeps = (): ChatTurnDeps => ({
   },
 });
 
+// Hermes has no DOMException, so the abort is the plain AbortError the provider transport throws.
 const throwIfAborted = (signal: AbortSignal): void => {
-  if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  if (signal.aborted) throw abortError('Aborted');
+};
+
+// The notes are read on this phone, so a failure there is reported as one rather than as the
+// connection problem an unrecognised error reads as.
+const readNotes = <T>(read: () => T): T => {
+  try {
+    return read();
+  } catch (error) {
+    throw new ChatNotesReadError(error);
+  }
 };
 
 // ReasoningService treats an inferenceRoute as the selection it would otherwise look up, and
@@ -281,7 +294,9 @@ export async function runChatTurn(
   const allowed = (notes: Note[]): Note[] =>
     includePrivate ? notes : notes.filter((note) => note.isPrivate !== 1);
   const history =
-    includePrivate || !usedPrivateNote(input.history, deps.isNotePrivate) ? input.history : [];
+    includePrivate || !readNotes(() => usedPrivateNote(input.history, deps.isNotePrivate))
+      ? input.history
+      : [];
 
   const accounts = readAccounts(deps);
   let calendar: ChatCalendar = accounts === null ? 'unavailable' : null;
@@ -305,8 +320,9 @@ export async function runChatTurn(
 
   setStep({ id: 'search', status: 'active', label: 'Searching your notes…' });
   // Transcripts of the notes with no text of their own, read once whether a note is sent or passed
-  // over for having nothing in it.
+  // over for having nothing in it, and of the notes sent that matched in their transcript.
   const transcripts = new Map<number, string>();
+  const transcriptMatches = new Set<number>();
   const hasContent = (note: Note): boolean => {
     if (!lacksNoteText(note)) return true;
     const transcript = transcripts.get(note.id) ?? deps.getNoteTranscript(note.id);
@@ -325,11 +341,28 @@ export async function runChatTurn(
   };
   // Only notes whose words match, or that were made in the period the question names, are sent: a
   // question about something else gets no notes rather than unrelated ones.
-  const found = findNotes(
-    parseChatQuery(question, now),
-    (terms, window) => deps.getCandidateNotes(terms, { includePrivate, limit: MATCH_POOL, window }),
-    pick,
-  );
+  const found = readNotes(() => {
+    const result = findNotes(
+      parseChatQuery(question, now),
+      (terms, window) => {
+        const candidates = deps.getCandidateNotes(terms, {
+          includePrivate,
+          limit: MATCH_POOL,
+          window,
+        });
+        candidates.transcriptMatchIds?.forEach((id) => transcriptMatches.add(id));
+        return candidates;
+      },
+      pick,
+    );
+    // A note found through what was said in it is sent with those lines, not its summary alone.
+    for (const note of result.notes) {
+      if (transcriptMatches.has(note.id) && !transcripts.has(note.id)) {
+        transcripts.set(note.id, deps.getNoteTranscript(note.id));
+      }
+    }
+    return result;
+  });
   const { notes } = found;
   setStep({
     id: 'search',

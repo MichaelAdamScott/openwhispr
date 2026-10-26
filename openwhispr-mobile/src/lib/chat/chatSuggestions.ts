@@ -1,4 +1,5 @@
 import type { GoogleCalendarEvent } from '@/data';
+import { parseCalendarParticipants } from '@/lib/calendar/meetingContext';
 import { tryParseNoteTimestamp } from '@/lib/parseNoteTimestamp';
 import { formatChatTime, isSameLocalDay } from './chatContext';
 
@@ -26,12 +27,22 @@ const STATIC_SUGGESTIONS: readonly ChatSuggestion[] = [
   'What did I decide recently?',
 ].map((question) => ({ label: question, prompt: question }));
 
+const declinedByUser = (event: GoogleCalendarEvent): boolean =>
+  parseCalendarParticipants(event.attendeesJson)?.some(
+    (participant) => participant.self && participant.responseStatus === 'declined',
+  ) ?? false;
+
 const calendarSuggestion = (event: GoogleCalendarEvent, now: Date): ChatSuggestion | null => {
   // An all-day event has no start time to prep for.
   if (event.allDay) return null;
   const start = tryParseNoteTimestamp(event.startAt);
   if (!start || !isSameLocalDay(start, now)) return null;
   if (start.getTime() < now.getTime() - RECENTLY_STARTED_MS) return null;
+  // The upcoming list keeps a meeting until 15 minutes after it ends, and a short one can be over
+  // before its start leaves the window.
+  const end = tryParseNoteTimestamp(event.endAt);
+  if (end && end.getTime() <= now.getTime()) return null;
+  if (declinedByUser(event)) return null;
 
   const summary = event.summary?.trim() || 'Untitled meeting';
   return {

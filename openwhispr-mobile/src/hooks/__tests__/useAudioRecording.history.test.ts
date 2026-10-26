@@ -214,6 +214,91 @@ it('still writes history by default', async () => {
   expect(deleteManagedTranscriptAudio).not.toHaveBeenCalled();
 });
 
+describe('shouldCancel', () => {
+  it('drops a recording cancelled while it transcribes', async () => {
+    let cancelled = false;
+    mockTranscribe.mockImplementation(async (_request, lifecycle) => {
+      cancelled = true;
+      expect(lifecycle?.shouldCancel?.()).toBe(true);
+      return transcribed('Dropped.');
+    });
+    const onComplete = jest.fn();
+    const onError = jest.fn();
+
+    const { stopError } = await recordAndStop({
+      saveToHistory: false,
+      shouldCancel: () => cancelled,
+      onComplete,
+      onError,
+    });
+
+    expect(stopError).toBeUndefined();
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(deleteManagedTranscriptAudio).toHaveBeenCalledWith(RETAINED_URI);
+  });
+
+  it('reports nothing for a cancelled recording whose transcription failed', async () => {
+    let cancelled = false;
+    mockTranscribe.mockImplementation(async () => {
+      cancelled = true;
+      throw new Error('Network down');
+    });
+    const onError = jest.fn();
+
+    const { stopError } = await recordAndStop({
+      saveToHistory: false,
+      shouldCancel: () => cancelled,
+      onError,
+    });
+
+    expect(stopError).toBeUndefined();
+    expect(onError).not.toHaveBeenCalled();
+    expect(mockAddFailedTranscript).not.toHaveBeenCalled();
+    expect(deleteManagedTranscriptAudio).toHaveBeenCalledWith(RETAINED_URI);
+  });
+
+  it('sends nothing for a recording cancelled before it transcribes', async () => {
+    const onComplete = jest.fn();
+
+    await recordAndStop({ saveToHistory: false, shouldCancel: () => true, onComplete });
+
+    expect(mockTranscribe).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(deleteManagedTranscriptAudio).toHaveBeenCalledWith(RETAINED_URI);
+  });
+});
+
+describe('cleanup', () => {
+  it('cleans by default', async () => {
+    mockTranscribe.mockResolvedValue({
+      ...transcribed('Cleaned, with snippet.'),
+      originalText: 'um cleaned with snippet',
+    });
+    const onComplete = jest.fn();
+
+    await recordAndStop({ saveToHistory: false, onComplete });
+
+    expect(mockTranscribe.mock.calls[0][0].cleanupUnavailable).toBeUndefined();
+    expect(onComplete).toHaveBeenCalledWith('Cleaned, with snippet.');
+  });
+
+  it('marks cleanup unavailable and completes with the transcript as heard when off', async () => {
+    mockTranscribe.mockResolvedValue({
+      ...transcribed('Expanded snippet text'),
+      originalText: 'what is sig',
+    });
+    const onComplete = jest.fn();
+
+    await recordAndStop({ saveToHistory: false, cleanup: false, onComplete });
+
+    const [request] = mockTranscribe.mock.calls[0];
+    expect(request.cleanupRoute).toBeUndefined();
+    expect(request.cleanupUnavailable).toEqual(expect.any(String));
+    expect(onComplete).toHaveBeenCalledWith('what is sig');
+  });
+});
+
 describe('cancelRecording', () => {
   const startHook = async (): Promise<
     ReturnType<typeof renderHook<ReturnType<typeof useAudioRecording>, unknown>>
@@ -248,6 +333,23 @@ describe('cancelRecording', () => {
       await expect(result.current.cancelRecording()).resolves.toBeUndefined();
     });
 
+    expect(result.current.isRecording).toBe(false);
+  });
+
+  it('stops and deletes a recording a call or Siri paused', async () => {
+    const { result } = await startHook();
+    // The paused recorder reports not recording while the recording is still open.
+    mockRecorder.isRecording = false;
+    mockRecorder.stop.mockRejectedValueOnce(new Error('Recorder is paused'));
+
+    await act(async () => {
+      await expect(result.current.cancelRecording()).resolves.toBeUndefined();
+    });
+
+    expect(mockRecorder.stop).toHaveBeenCalledTimes(1);
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///tmp/rec.wav', {
+      idempotent: true,
+    });
     expect(result.current.isRecording).toBe(false);
   });
 

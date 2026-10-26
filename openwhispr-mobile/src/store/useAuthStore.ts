@@ -27,11 +27,20 @@ const GUEST_SESSION_KEY = 'openwhispr_guest_session';
 // including failures, so its late result cannot overwrite the chosen session.
 let anonymousSignInInFlight: Promise<void> | null = null;
 
-// Required lazily: the chat store reaches SQLite through @/data.
-const clearLocalChatHistory = (): void => {
-  const { clearChatHistory } =
-    require('@/lib/chat/chatHistory') as typeof import('@/lib/chat/chatHistory');
-  clearChatHistory();
+// Required lazily: the chat store reaches SQLite through @/data. A module that fails to load is
+// reported rather than thrown, so it can't leave a sign-out or account deletion half done.
+const withChatHistory = (
+  use: (chatHistory: typeof import('@/lib/chat/chatHistory')) => void,
+): void => {
+  try {
+    use(require('@/lib/chat/chatHistory') as typeof import('@/lib/chat/chatHistory'));
+  } catch (error) {
+    console.warn('[auth] chat history was not loaded:', error);
+    Sentry.captureException(error, {
+      level: 'warning',
+      tags: { feature: 'chat', operation: 'load-history' },
+    });
+  }
 };
 
 type SessionResult = {
@@ -186,11 +195,15 @@ export const useAuthStore = create<AuthStore>((set) => ({
   signOut: async () => {
     set({ isLoading: true });
     await anonymousSignInInFlight?.catch(() => undefined);
+    // Chats go the way of the notes they quote: a guest or anonymous session keeps its notes for a
+    // later sign-up to claim (see initSyncTriggers), so it keeps its chats too.
+    const { user } = useAuthStore.getState();
+    const realAccount = user !== null && !user.isAnonymous;
     await signOutApi();
     await SecureStore.deleteItemAsync(GUEST_SESSION_KEY);
     useUsageStore.getState().reset();
     clearAgentSessions();
-    clearLocalChatHistory();
+    withChatHistory((chats) => (realAccount ? chats.clearChatHistory() : chats.stopChatTurn()));
     set({ user: null, sessionCookie: null, isGuest: false, isLoading: false });
   },
 
@@ -213,7 +226,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       await SecureStore.deleteItemAsync(GUEST_SESSION_KEY);
       useUsageStore.getState().reset();
       clearAgentSessions();
-      clearLocalChatHistory();
+      withChatHistory((chats) => chats.clearChatHistory());
       set({ user: null, sessionCookie: null, isGuest: false, isLoading: false });
     } catch (error) {
       set({ isLoading: false, error: error instanceof Error ? error.message : 'Delete failed' });

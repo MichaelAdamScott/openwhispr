@@ -1,11 +1,11 @@
 import { Sentry } from '@/lib/sentry';
 import { useChatStore, wipeSavedChats } from '@/store/useChatStore';
 
-const reportFailure = (error: unknown): void => {
-  console.warn('[chat] chat history was not cleared:', error);
+const reportFailure = (error: unknown, operation = 'clear-history'): void => {
+  console.warn(`[chat] ${operation} failed:`, error);
   Sentry.captureException(error, {
     level: 'warning',
-    tags: { feature: 'chat', operation: 'clear-history' },
+    tags: { feature: 'chat', operation },
   });
 };
 
@@ -28,4 +28,14 @@ export const clearChatHistory = (): boolean => {
     reportFailure(error);
   }
   return cleared;
+};
+
+// A sign-out that keeps the chats still stops the turn that was running, so its answer isn't saved
+// after the session that asked for it has gone.
+export const stopChatTurn = (): void => {
+  try {
+    useChatStore.getState().cancel();
+  } catch (error) {
+    reportFailure(error, 'stop-turn');
+  }
 };

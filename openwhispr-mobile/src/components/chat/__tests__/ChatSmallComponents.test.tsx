@@ -37,6 +37,23 @@ describe('chat components', () => {
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
+  it('ChatErrorRow words a stopped or unanswered question without blaming anything', () => {
+    const stopped = render(
+      <ChatErrorRow reason="stopped" disabled={false} onRetry={jest.fn()} onEdit={jest.fn()} />,
+    );
+    expect(stopped.getByText('Stopped')).toBeTruthy();
+    expect(stopped.getByText('Your question is saved.')).toBeTruthy();
+    expect(stopped.queryByText('Couldn’t get an answer')).toBeNull();
+    expect(stopped.getByLabelText('Retry')).toBeTruthy();
+    stopped.unmount();
+
+    const unanswered = render(
+      <ChatErrorRow reason="unanswered" disabled={false} onRetry={jest.fn()} onEdit={jest.fn()} />,
+    );
+    expect(unanswered.getByText('Not answered')).toBeTruthy();
+    expect(unanswered.getByLabelText('Edit question')).toBeTruthy();
+  });
+
   it('ChatErrorRow ignores presses while disabled', () => {
     const onRetry = jest.fn();
     const onEdit = jest.fn();
