@@ -158,7 +158,9 @@ test("a proposal whose title matches a skill updates it and keeps a version", (t
     hash: checked.hash,
   });
   assert.match(checked.hash, /^[0-9a-f]{64}$/);
-  const saved = library.saveProposal(proposal({ instructions: "New steps" }));
+  const saved = library.saveProposal(
+    proposal({ instructions: "New steps", baseHash: checked.hash })
+  );
 
   assert.equal(saved.name, "weekly-recap");
   assert.match(readSkill(skillsDir, "weekly-recap"), /\nNew steps\n$/);
@@ -276,15 +278,15 @@ test("a proposal that updates a skill keeps its other files and header lines", (
     "scripts/x.py": "print(1)\n",
   });
   library.scan();
+  const draft = proposal({
+    title: "Meeting prep",
+    description: "Preps me for meetings.",
+    instructions: "New steps",
+    files: [{ path: "references/extra.md", content: "Extra\n" }],
+  });
+  const { hash } = library.checkProposal({ kind: "create", proposal: draft });
 
-  const saved = library.saveProposal(
-    proposal({
-      title: "Meeting prep",
-      description: "Preps me for meetings.",
-      instructions: "New steps",
-      files: [{ path: "references/extra.md", content: "Extra\n" }],
-    })
-  );
+  const saved = library.saveProposal({ ...draft, baseHash: hash });
 
   assert.ok(saved.versionId);
   assert.deepEqual(listDir(path.join(skillsDir, "meeting-prep", "references")), [
@@ -312,4 +314,24 @@ test("a proposal that updates a skill is refused once the skill changed after it
 
   const fresh = check(library, {}).hash;
   assert.equal(library.saveProposal(proposal({ baseHash: fresh })).name, "weekly-recap");
+});
+
+test("a card made for a new skill doesn't replace one that took its title since", (t) => {
+  const { library, skillsDir } = setup(t);
+  const checked = check(library, {});
+  assert.equal(checked.existing, false);
+  library.create({ title: "Weekly recap", description: "Mine.", instructions: "Mine", files: [] });
+
+  assert.deepEqual(library.saveProposal(proposal({})), { changed: true });
+  assert.match(readSkill(skillsDir, "weekly-recap"), /\nMine\n$/);
+});
+
+test("a card made to update a skill doesn't make a new one once that skill is gone", (t) => {
+  const { library, skillsDir } = setup(t);
+  library.create({ title: "Weekly recap", description: "Recaps.", instructions: "Old", files: [] });
+  const { hash } = check(library, {});
+  library.uninstall("weekly-recap");
+
+  assert.deepEqual(library.saveProposal(proposal({ baseHash: hash })), { changed: true });
+  assert.equal(fs.existsSync(path.join(skillsDir, "weekly-recap")), false);
 });

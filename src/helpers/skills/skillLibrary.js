@@ -560,6 +560,10 @@ class SkillLibrary {
   saveProposal(proposal) {
     const { name, existing, problems, files } = this._proposedSkill(proposal);
     if (problems.length > 0) return { problems };
+    // A card carries a hash only when it was made to update a skill. One whose skill is gone
+    // since would quietly make a new skill, and one made as new would replace a skill that took
+    // its title since, unseen: both are cards the skill changed under.
+    if (existing !== (proposal.baseHash !== undefined)) return { changed: true };
     if (!existing) {
       this._install(name, files);
       return { name };
@@ -582,8 +586,9 @@ class SkillLibrary {
   }
 
   // Puts a kept copy back in one swap, then forgets it. False when there is no such copy, or
-  // when the skill changed after the save that kept it (a later save, an upload or an edit by
-  // hand): putting this one back would lose that change.
+  // when the skill changed after the save that kept it (a later save, an upload, an edit by
+  // hand, a delete): putting this one back would lose that change. A kept copy that can't be
+  // read throws instead, since nothing changed the skill and the card offers Undo again.
   undo(name, versionId) {
     const versionDir = path.join(this.versionsDir, name, versionId);
     if (!fs.existsSync(versionDir)) return false;
@@ -591,12 +596,12 @@ class SkillLibrary {
     let written;
     try {
       written = JSON.parse(fs.readFileSync(`${versionDir}.json`, "utf8"));
-    } catch {
-      return false;
+    } catch (error) {
+      throw writeError(error);
     }
     if (this._folderHash(name) !== written.hash) return false;
     const walked = walkSkillFolder(versionDir);
-    if (walked.unreadable) return false;
+    if (walked.unreadable) throw writeError(new Error("The kept copy can't be read"));
     const files = walked.files.map((file) => ({
       path: file.path,
       data: fs.readFileSync(file.fullPath),
@@ -612,17 +617,28 @@ class SkillLibrary {
   }
 
   // A copy of the skill as it is now, for Undo to put back. Ids only grow, so the newest
-  // copies are always the ones kept.
+  // copies are always the ones kept. A copy cut short is removed, so it never counts as one.
   saveVersion(name) {
     const folder = path.join(this.versionsDir, name);
+    const versionId = String(Math.max(Date.now(), (versionIds(folder).at(-1) ?? 0) + 1));
+    const versionDir = path.join(folder, versionId);
+    try {
+      fs.cpSync(path.join(this.skillsDir, name), versionDir, { recursive: true });
+    } catch (error) {
+      this._removeQuietly(versionDir);
+      throw writeError(error);
+    }
+    return versionId;
+  }
+
+  // Only once a new version is complete do the oldest go, so a save that fails keeps them all.
+  _pruneVersions(name) {
+    const folder = path.join(this.versionsDir, name);
     const kept = versionIds(folder);
-    const versionId = String(Math.max(Date.now(), (kept.at(-1) ?? 0) + 1));
-    fs.cpSync(path.join(this.skillsDir, name), path.join(folder, versionId), { recursive: true });
-    for (const old of kept.slice(0, Math.max(0, kept.length + 1 - VERSIONS_KEPT))) {
+    for (const old of kept.slice(0, Math.max(0, kept.length - VERSIONS_KEPT))) {
       this._removeQuietly(path.join(folder, String(old)));
       this._removeQuietly(path.join(folder, `${old}.json`));
     }
-    return versionId;
   }
 
   markUsed(name) {
@@ -780,8 +796,10 @@ class SkillLibrary {
     return size ? { problem: size } : { files };
   }
 
+  // A skill that can't be read has no hash, and a card without one can't save over it.
   _hashOf(name) {
-    return { hash: this._folderHash(name) };
+    const hash = this._folderHash(name);
+    return hash ? { hash } : {};
   }
 
   // A card is built against the skill as it was then; a save after the skill changed (another
@@ -811,6 +829,7 @@ class SkillLibrary {
         enabledAfter: enabledAfter ?? enabled === true,
       };
       fs.writeFileSync(`${versionDir}.json`, JSON.stringify(written));
+      this._pruneVersions(name);
       return versionId;
     } catch (error) {
       debugLogger.warn(
@@ -824,8 +843,12 @@ class SkillLibrary {
     }
   }
 
+  // Null for a skill that is gone or can't be read, which matches no card's hash.
   _folderHash(name) {
-    const walked = walkSkillFolder(this.skillDir(name));
+    const folder = this.skillDir(name);
+    if (!folder) return null;
+    const walked = walkSkillFolder(folder);
+    if (walked.unreadable) return null;
     return contentHash(
       walked.files.map((file) => ({ path: file.path, data: fs.readFileSync(file.fullPath) }))
     );

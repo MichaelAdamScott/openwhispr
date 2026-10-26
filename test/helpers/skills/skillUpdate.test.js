@@ -173,7 +173,9 @@ test("Undo puts back whether the replaced skill was switched on", (t) => {
   library.scan(); // found on disk, so it starts off
   const proposal = { title: "Weekly recap", description: "Recaps.", instructions: "New" };
 
-  const { versionId } = library.saveProposal({ ...proposal, files: [] });
+  const draft = { ...proposal, files: [] };
+  const { hash } = library.checkProposal({ kind: "create", proposal: draft });
+  const { versionId } = library.saveProposal({ ...draft, baseHash: hash });
   assert.equal(library.scan()[0].enabled, true, "the approved save switches it on");
   assert.equal(library.undo("weekly-recap", versionId), true);
 
@@ -329,4 +331,53 @@ test("a save whose Undo note can't be written still saves, without Undo", (t) =>
   assert.deepEqual(saved, { name: NAME, versionId: undefined });
   assert.match(readSkill(skillsDir, NAME), /Have the SSO answer ready\./);
   assert.deepEqual(listDir(versionsDir), []);
+});
+
+test("a failed write with five versions kept loses none of them", (t) => {
+  const { library, versionsDir } = playbook(t);
+  for (let round = 1; round <= 5; round += 1) {
+    library.applyUpdate({ ...SSO, instructions: `Round ${round}`, files: [] });
+  }
+  const kept = listDir(versionsDir);
+  assert.equal(kept.length, 10);
+  t.mock.method(fs, "renameSync", () => {
+    throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+  });
+
+  assert.throws(() => library.applyUpdate({ ...SSO, instructions: "Lost" }), { code: "noSpace" });
+  t.mock.restoreAll();
+
+  assert.deepEqual(listDir(versionsDir), kept);
+});
+
+test("a version copy cut short is removed and says why", (t) => {
+  const { library, skillsDir, versionsDir } = playbook(t);
+  const skill = snapshot(path.join(skillsDir, NAME));
+  t.mock.method(fs, "cpSync", (_from, to) => {
+    fs.mkdirSync(to, { recursive: true });
+    fs.writeFileSync(path.join(to, "SKILL.md"), "half");
+    throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+  });
+
+  assert.throws(() => library.applyUpdate(SSO), { code: "noSpace" });
+  t.mock.restoreAll();
+
+  assert.deepEqual(listDir(versionsDir), [], "no half copy left to count as a version");
+  assert.deepEqual(snapshot(path.join(skillsDir, NAME)), skill);
+});
+
+test("Undo of a kept copy that can't be read fails without blaming a later change", (t) => {
+  const { library, versionsDir } = playbook(t);
+  const { versionId } = library.applyUpdate(SSO);
+  fs.writeFileSync(path.join(versionsDir, `${versionId}.json`), "{ not json");
+
+  assert.throws(() => library.undo(NAME, versionId), { code: "unknown" });
+});
+
+test("Undo is refused once the skill was deleted by hand", (t) => {
+  const { library, skillsDir } = playbook(t);
+  const { versionId } = library.applyUpdate(SSO);
+  fs.rmSync(path.join(skillsDir, NAME), { recursive: true });
+
+  assert.equal(library.undo(NAME, versionId), false);
 });
