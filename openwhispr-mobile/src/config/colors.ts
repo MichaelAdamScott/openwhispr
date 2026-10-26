@@ -61,7 +61,8 @@ export const CHAT_COLORS = {
   errorBackground: '#FBECEA',
   // BRAND_GRADIENT's middle stop, around the mic while it listens.
   listeningRing: 'rgba(21,75,212,0.22)',
-  watermark: 'rgba(17,17,19,0.07)',
+  // Faint enough that text over it keeps its contrast.
+  watermark: 'rgba(17,17,19,0.035)',
   onGradient: '#FFFFFF',
   onGradientSubtle: 'rgba(255,255,255,0.55)',
 } as const;

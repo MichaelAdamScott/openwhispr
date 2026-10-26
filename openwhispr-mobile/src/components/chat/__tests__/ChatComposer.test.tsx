@@ -5,6 +5,17 @@ import { ChatComposer } from '../ChatComposer';
 
 jest.mock('@/components/ui/Text', () => ({ Text: require('react-native').Text }));
 jest.mock('@/components/ui/SystemIcon', () => ({ SystemIcon: () => null }));
+const mockRecordingBars = jest.fn((_props: { numBars?: number }) => null);
+jest.mock('@/components/features/WaveformVisualizer', () => ({
+  RecordingBars: (props: { numBars?: number }) => mockRecordingBars(props),
+}));
+const mockUseAudioWaveform = jest.fn((..._args: unknown[]) => ({
+  waveformData: [],
+  currentAmplitude: 0,
+}));
+jest.mock('@/hooks/useAudioWaveform', () => ({
+  useAudioWaveform: (...args: unknown[]) => mockUseAudioWaveform(...args),
+}));
 
 const renderComposer = (
   overrides: Partial<React.ComponentProps<typeof ChatComposer>> = {},
@@ -24,6 +35,22 @@ const renderComposer = (
 };
 
 describe('ChatComposer', () => {
+  it('fills the field with the waveform while listening', () => {
+    const { getByLabelText } = renderComposer({
+      listening: { audioRecorder: null, onCancel: jest.fn(), onFinish: jest.fn() },
+    });
+    expect(mockRecordingBars).not.toHaveBeenCalled();
+
+    fireEvent(getByLabelText('Recording'), 'layout', {
+      nativeEvent: { layout: { width: 240, height: 18, x: 0, y: 0 } },
+    });
+
+    // 3 px bars, 3 px apart: 40 bars span 237 px.
+    expect(mockRecordingBars).toHaveBeenLastCalledWith(expect.objectContaining({ numBars: 40 }));
+    const historyLength = mockUseAudioWaveform.mock.calls.at(-1)?.[2];
+    expect(historyLength).toBeGreaterThanOrEqual(40);
+  });
+
   it('hands the screen its input, so Edit question can focus it', () => {
     const inputRef = createRef<TextInput>();
     renderComposer({ inputRef });

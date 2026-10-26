@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { SystemIcon } from '@/components/ui/SystemIcon';
@@ -41,14 +42,25 @@ interface ChatComposerProps {
   inputRef?: React.Ref<TextInput>;
 }
 
-const WAVEFORM_BARS = 14;
+const BAR_WIDTH = 3;
+const BAR_GAP = 3;
+// Enough levels to fill the widest field (an iPad's, about 600 px), so no bar sits flat for want of
+// one.
+const WAVEFORM_HISTORY = 100;
 
-// Mounted only while listening, so the mic level is read only then.
+// Mounted only while listening, so the mic level is read only then. The bars fill whatever width
+// the field has, so it reads as listening across the whole composer.
 function ListeningField({
   audioRecorder,
   onCancel,
 }: Pick<ChatComposerListening, 'audioRecorder' | 'onCancel'>): React.JSX.Element {
-  const { waveformData, currentAmplitude } = useAudioWaveform(audioRecorder, true);
+  const { waveformData, currentAmplitude } = useAudioWaveform(
+    audioRecorder,
+    true,
+    WAVEFORM_HISTORY,
+  );
+  const [width, setWidth] = useState(0);
+  const numBars = Math.min(WAVEFORM_HISTORY, Math.floor((width + BAR_GAP) / (BAR_WIDTH + BAR_GAP)));
 
   return (
     <View className="h-10 flex-row items-center gap-2">
@@ -62,18 +74,25 @@ function ListeningField({
         <SystemIcon name="xmark" mdName="X" size={13} color="secondaryLabel" />
       </Pressable>
       {/* The waveform alone shows it's listening, so a screen reader is told in words. */}
-      <View accessible accessibilityLabel="Recording">
-        <RecordingBars
-          isRecording
-          edgeToEdge
-          color={BRAND_GRADIENT[1]}
-          height={18}
-          numBars={WAVEFORM_BARS}
-          barWidth={3}
-          barGap={3}
-          amplitude={currentAmplitude}
-          waveformData={waveformData}
-        />
+      <View
+        accessible
+        accessibilityLabel="Recording"
+        className="flex-1"
+        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      >
+        {numBars > 0 ? (
+          <RecordingBars
+            isRecording
+            edgeToEdge
+            color={BRAND_GRADIENT[1]}
+            height={18}
+            numBars={numBars}
+            barWidth={BAR_WIDTH}
+            barGap={BAR_GAP}
+            amplitude={currentAmplitude}
+            waveformData={waveformData}
+          />
+        ) : null}
       </View>
     </View>
   );
