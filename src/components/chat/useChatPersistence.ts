@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Message, ToolCallInfo } from "./types";
 import type { ContainerScope } from "../../types/chat";
+import { withoutSkillCardDrafts } from "./skillCardRecord";
 
 interface UseChatPersistenceOptions {
   conversationId?: number | null;
@@ -111,7 +112,7 @@ export function useChatPersistence(options: UseChatPersistenceOptions = {}): Cha
         conversationIdRef.current,
         "assistant",
         content,
-        toolCalls?.length ? { toolCalls } : undefined
+        toolCalls?.length ? { toolCalls: withoutSkillCardDrafts(toolCalls) } : undefined
       );
     }
   }, []);

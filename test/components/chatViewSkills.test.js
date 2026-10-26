@@ -56,9 +56,10 @@ const MOCKS = {
   "/ChatMessages": `
     import { createElement } from "react";
     import { useSkillChatActions } from "/components/chat/skillChatActions.ts";
-    export function ChatMessages({ emptyState }) {
+    // As the thread shows an empty chat: the leading message in place of the empty state.
+    export function ChatMessages({ emptyState, leading }) {
       globalThis.__skillChatActions = useSkillChatActions();
-      return createElement("div", null, emptyState);
+      return createElement("div", null, leading ?? emptyState);
     }
   `,
   "/ui/dialog": `export function ConfirmDialog() { return null; }`,

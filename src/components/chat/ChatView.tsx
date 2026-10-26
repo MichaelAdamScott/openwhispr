@@ -289,21 +289,18 @@ export default function ChatView({
           <div className="relative flex-1 min-w-80 min-h-0 flex flex-col">
             <ChatMessages
               messages={persistence.messages}
+              leading={attachedSkill?.ref.builtin ? <CreatorOpening /> : undefined}
               emptyState={
-                attachedSkill?.ref.builtin ? (
-                  <CreatorOpening />
-                ) : (
-                  <NewChatEmptyState
-                    onPrompt={(prompt) => {
-                      // The starter card unmounts once the message lands; move focus to the
-                      // composer first so it isn't dropped.
-                      focusComposer();
-                      void sendWithSkill(prompt, attachedSkill);
-                    }}
-                    showSuggestions={isNewChat}
-                    disabled={submissionInFlight || streaming.agentState !== "idle"}
-                  />
-                )
+                <NewChatEmptyState
+                  onPrompt={(prompt) => {
+                    // The starter card unmounts once the message lands; move focus to the
+                    // composer first so it isn't dropped.
+                    focusComposer();
+                    void sendWithSkill(prompt, attachedSkill);
+                  }}
+                  showSuggestions={isNewChat}
+                  disabled={submissionInFlight || streaming.agentState !== "idle"}
+                />
               }
               contentClassName={`${PAGE_CONTENT_WIDTH_CLASS} pb-[var(--chat-composer-inset,5rem)]`}
             />

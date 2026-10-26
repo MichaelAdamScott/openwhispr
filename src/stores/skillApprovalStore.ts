@@ -43,6 +43,8 @@ export interface SkillCreateApproval extends SkillApprovalBase {
   kind: "create";
   /** A skill already has this name, so saving updates it. */
   replacesExisting?: boolean;
+  /** The title that check was made for; an edit away from it makes the card check again. */
+  checkedTitle: string;
   /** What Save writes; Edit changes it. */
   draft: SkillProposal;
   /** As proposed, to tell the model whether the user edited it. */
@@ -81,15 +83,21 @@ type SkillApprovalRequest =
     >;
 
 export type SkillApprovalOutcome =
-  | { state: "saved"; name: string; edited: boolean }
+  | { state: "saved"; name: string; title: string; versionId?: string; edited: boolean }
   | { state: "skipped" }
   | { state: "failed" }
   | { state: "changed" }
   | { state: "not_saved"; reason: "expired" | "conversation_ended" | "duplicate_tool_call" };
 
-export const useSkillApprovalStore = create<{ entries: Record<string, SkillApprovalEntry> }>(
-  () => ({ entries: {} })
-);
+/** How an Undo of one save went, kept by version so a reopened chat's card still knows. */
+export type SkillUndoState = "undoing" | "undone" | "changed_since" | "failed";
+
+export const skillVersionKey = (name: string, versionId: string): string => `${name}/${versionId}`;
+
+export const useSkillApprovalStore = create<{
+  entries: Record<string, SkillApprovalEntry>;
+  undos: Record<string, SkillUndoState>;
+}>(() => ({ entries: {}, undos: {} }));
 
 interface PendingResolution {
   resolve: (outcome: SkillApprovalOutcome) => void;
@@ -112,7 +120,7 @@ function entryFor(key: string): SkillApprovalEntry | undefined {
   return useSkillApprovalStore.getState().entries[key];
 }
 
-type SkillCreatePatch = Pick<SkillCreateApproval, "replacesExisting" | "baseHash">;
+type SkillCreatePatch = Pick<SkillCreateApproval, "replacesExisting" | "baseHash" | "checkedTitle">;
 
 function patchEntry(
   key: string,
@@ -186,6 +194,7 @@ export function requestSkillApproval(
       messageId,
       toolCallId,
       ...request,
+      ...(request.kind === "create" ? { checkedTitle: request.draft.title } : {}),
       draft: copyDraft(request.draft),
       original: copyDraft(request.draft),
       state: "pending",
@@ -220,7 +229,12 @@ export async function saveSkillApproval(key: string): Promise<void> {
       return;
     }
     if (check.existing && !(entry.replacesExisting && check.name === entry.name)) {
-      reopen(key, { name: check.name, replacesExisting: true, baseHash: check.hash });
+      reopen(key, {
+        name: check.name,
+        replacesExisting: true,
+        baseHash: check.hash,
+        checkedTitle: entry.draft.title,
+      });
       return;
     }
   }
@@ -245,9 +259,16 @@ export async function saveSkillApproval(key: string): Promise<void> {
   }
   if (entry.kind === "create") playSkillIcon(result.name);
   const edited = JSON.stringify(entry.draft) !== JSON.stringify(entry.original);
+  const title = entry.kind === "create" ? entry.draft.title : entry.displayName;
   settle(
     key,
-    { state: "saved", name: result.name, edited },
+    {
+      state: "saved",
+      name: result.name,
+      title,
+      ...(result.versionId ? { versionId: result.versionId } : {}),
+      edited,
+    },
     { state: "saved", name: result.name, versionId: result.versionId }
   );
 }
@@ -257,27 +278,41 @@ export function skipSkillApproval(key: string): void {
   settle(key, { state: "skipped" }, { state: "skipped" });
 }
 
-// Undos under way. Main refuses a second Undo of one save, so a second press would end on
-// "changed since" although the first one worked.
-const undoing = new Set<string>();
+const isUndoing = (versionKey: string): boolean =>
+  useSkillApprovalStore.getState().undos[versionKey] === "undoing";
+
+function setUndo(versionKey: string, undo: SkillUndoState): void {
+  useSkillApprovalStore.setState((state) => ({ undos: { ...state.undos, [versionKey]: undo } }));
+}
+
+/**
+ * Puts back the skill one save replaced, from its live card or from the card a reopened chat
+ * rebuilds. Main refuses a second Undo of one save, so a second press while one runs is
+ * ignored: it would end on "changed since" although the first one worked.
+ */
+export async function undoSkillVersion(name: string, versionId: string): Promise<void> {
+  const versionKey = skillVersionKey(name, versionId);
+  if (isUndoing(versionKey)) return;
+  setUndo(versionKey, "undoing");
+  const result = await window.electronAPI?.skillsUndo?.(name, versionId).catch(() => null);
+  // Main refuses once a later save changed the skill: undoing this one would lose that. A
+  // write that failed leaves the save in place, so Undo can be tried again.
+  setUndo(
+    versionKey,
+    result?.ok ? "undone" : result?.error === "invalid" ? "changed_since" : "failed"
+  );
+}
 
 /** Puts back the skill a save replaced; the tool call has already settled by then. */
 export async function undoSkillApproval(key: string): Promise<void> {
   const entry = entryFor(key);
-  if (!entry || entry.state !== "saved" || !entry.versionId || undoing.has(key)) return;
-  undoing.add(key);
+  if (!entry || entry.state !== "saved" || !entry.versionId) return;
+  const versionKey = skillVersionKey(entry.name, entry.versionId);
+  if (isUndoing(versionKey)) return;
   // Cleared while it runs, so a failure that repeats is shown and announced again.
   patchEntry(key, { undoFailed: false });
-  try {
-    const result = await window.electronAPI
-      ?.skillsUndo?.(entry.name, entry.versionId)
-      .catch(() => null);
-    if (result?.ok) patchEntry(key, { state: "undone" });
-    // Main refuses once a later save changed the skill: undoing this one would lose that.
-    else if (result?.error === "invalid") patchEntry(key, { state: "changed_since" });
-    // A write that failed leaves the save in place, so Undo can be tried again.
-    else patchEntry(key, { undoFailed: true });
-  } finally {
-    undoing.delete(key);
-  }
+  await undoSkillVersion(entry.name, entry.versionId);
+  const undo = useSkillApprovalStore.getState().undos[versionKey];
+  if (undo === "undone" || undo === "changed_since") patchEntry(key, { state: undo });
+  else patchEntry(key, { undoFailed: true });
 }

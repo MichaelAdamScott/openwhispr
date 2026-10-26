@@ -491,7 +491,36 @@ test("a skill the user took off the chat isn't re-sent, though the model loaded 
   assert.deepEqual(calls.reads, []);
 });
 
-test("a skill read that fails sends the turn without that skill", async (t) => {
+test("a skill the user took off the chat leaves its list and load_skill too", async (t) => {
+  const { api } = skillsApi();
+  const { captured, sentMessages, toolDefinitions } = await renderChat(t, SKILLS_ON, {
+    electronAPI: api,
+  });
+
+  await captured.sendToAI("prep me", [userMessage("u1", "prep me")], {
+    removedSkills: ["meeting-prep"],
+  });
+
+  assert.equal(catalogOf(sentMessages[0]), "- weekly-recap: Recaps my week on Fridays.");
+  assert.deepEqual(loadSkillEnum(toolDefinitions[0]), ["weekly-recap"]);
+});
+
+test("someone with no skills is offered no skill tools, unless the creator is attached", async (t) => {
+  const { api } = skillsApi({ skills: [] });
+  const { captured, offeredTools } = await renderChat(t, SKILLS_ON, { electronAPI: api });
+
+  await captured.sendToAI("hi", [userMessage("u1", "hi")]);
+  await captured.sendToAI("make a skill", [userMessage("u2", "make a skill")], {
+    attachedSkill: { name: "skill-creator", builtin: true },
+  });
+
+  assert.deepEqual(
+    offeredTools.map((tools) => tools.filter((name) => name.includes("skill"))),
+    [[], ["propose_skill"]]
+  );
+});
+
+test("a skill read that fails sends the turn without that skill, and says so", async (t) => {
   const { api } = skillsApi();
   api.skillsReadForModel = async () => {
     throw new Error("EACCES: permission denied");
@@ -502,7 +531,15 @@ test("a skill read that fails sends the turn without that skill", async (t) => {
     attachedSkill: { name: "meeting-prep" },
   });
 
-  assert.equal(latestUserText(sentMessages[0]), "prep me");
+  // The chip still shows it, so the model hears it isn't used, to say so.
+  assert.equal(
+    latestUserText(sentMessages[0]),
+    withRequest(
+      "[The user attached the meeting-prep skill, but it couldn't be read, so this answer " +
+        "doesn't follow it. Say so first.]",
+      "prep me"
+    )
+  );
 });
 
 test("switching a skill off mid-conversation stops re-sending it", async (t) => {
@@ -630,7 +667,7 @@ test("a skill cut to fit is left to load_skill, not marked loaded", async (t) =>
   assert.match(results[0].data, /^<skill_content name="weekly-recap"/);
 });
 
-test("a first skill cut to fit is still sent, and load_skill can give it whole", async (t) => {
+test("a first skill cut to fit is still sent, and load_skill doesn't send it again", async (t) => {
   const steps = Array.from({ length: 4_000 }, (_, index) => `Prep step ${index + 1} done.`);
   const long = forModel("meeting-prep", "Meeting prep", steps.join("\n"));
   const readable = { ...READABLE, "meeting-prep": long };
@@ -650,7 +687,8 @@ test("a first skill cut to fit is still sent, and load_skill can give it whole",
   });
 
   assert.match(latestUserText(sentMessages[0]), /The rest of this skill was cut to fit/);
-  assert.match(results[0].data, /^<skill_content name="meeting-prep"/, "not 'already loaded'");
+  // load_skill has the same room, so it could only send the same cut copy a second time.
+  assert.match(results[0].data, /already loaded/);
 });
 
 test("a local model above the 4B gate gets a 330-token catalog", async (t) => {

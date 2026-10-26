@@ -18,13 +18,17 @@ import { problemKey } from "../skills/skillCopy";
 import { useSkillsStore } from "../../stores/skillsStore";
 import {
   saveSkillApproval,
+  skillVersionKey,
   skipSkillApproval,
   undoSkillApproval,
+  undoSkillVersion,
   updateSkillDraft,
+  useSkillApprovalStore,
   type SkillApprovalEntry,
   type SkillCreateApproval,
   type SkillUpdateApproval,
 } from "../../stores/skillApprovalStore";
+import type { SkillCardRecord } from "../../types/skills";
 import { foldUnchanged, lineDiff } from "../../utils/lineDiff";
 import { formatShortDate, normalizeDbDate } from "../../utils/dateFormatting";
 
@@ -58,6 +62,10 @@ function ExpandToggle({
   );
 }
 
+// A title as main matches it to a skill: case, spacing and how accents are encoded don't count.
+const titleKey = (title: string): string =>
+  title.trim().replace(/\s+/g, " ").normalize("NFC").toLowerCase();
+
 function CreateSkillBody({
   entry,
   editing,
@@ -67,17 +75,23 @@ function CreateSkillBody({
 }): ReactElement {
   const { t } = useTranslation();
   const playKey = useSkillsStore((state) => state.iconPlays[entry.name] ?? 0);
-  // Saving switches the skill on, which only needs saying for one that is off now.
-  const existingOff = useSkillsStore((state) =>
-    state.skills.some((skill) => skill.name === entry.name && !(skill.enabled && skill.valid))
-  );
-  const [showFull, setShowFull] = useState(false);
   const { draft } = entry;
+  // The skill the title names now, so an edited title says what saving does as it is typed;
+  // Save checks again in main. The card's own check stands while the title is as checked.
+  const named = useSkillsStore((state) =>
+    state.skills.find((skill) => titleKey(skill.displayName) === titleKey(draft.title))
+  );
+  const replaces =
+    named !== undefined ||
+    (Boolean(entry.replacesExisting) && titleKey(draft.title) === titleKey(entry.checkedTitle));
+  // Saving switches the skill on, which only needs saying for one that is off now.
+  const existingOff = named !== undefined && !(named.enabled && named.valid);
+  const [showFull, setShowFull] = useState(false);
   return (
     <>
       <p className="font-medium text-foreground">{t("skills.approval.createHeader")}</p>
       <p className="text-xs text-muted-foreground">
-        {entry.replacesExisting
+        {replaces
           ? t(
               existingOff
                 ? "skills.approval.replacesExistingTurnsOn"
@@ -113,6 +127,14 @@ function CreateSkillBody({
             dir="auto"
             value={draft.description}
             onChange={(event) => updateSkillDraft(entry.key, { description: event.target.value })}
+          />
+          <textarea
+            aria-label={t("skills.create.instructions")}
+            className={cn(FIELD_CLASS, EDITOR_CLASS)}
+            dir="auto"
+            spellCheck={false}
+            value={draft.instructions}
+            onChange={(event) => updateSkillDraft(entry.key, { instructions: event.target.value })}
           />
         </div>
       )}
@@ -334,11 +356,30 @@ function UpdateSkillBody({
   );
 }
 
+// Goes to the skill a card created on the Skills page, where the surface can show it.
+function OpenSkillLink({ name }: { name: string }): ReactElement | null {
+  const { t } = useTranslation();
+  const { openSkill } = useSkillChatActions();
+  if (!openSkill) return null;
+  return (
+    <>
+      {" ·"}
+      <Button
+        size="sm"
+        variant="link"
+        className={INLINE_LINK_CLASS}
+        onClick={() => openSkill(name)}
+      >
+        {t("skills.approval.openSkill")}
+      </Button>
+    </>
+  );
+}
+
 // The draft lives in the store, so edit mode only changes how it is shown: Save always
 // writes exactly what the card displays.
 export function SkillApprovalCard({ entry }: { entry: SkillApprovalEntry }): ReactElement {
   const { t } = useTranslation();
-  const { openSkill } = useSkillChatActions();
   const [editing, setEditing] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const showEditor = editing && entry.state === "pending";
@@ -401,6 +442,7 @@ export function SkillApprovalCard({ entry }: { entry: SkillApprovalEntry }): Rea
             >
               {t("skills.approval.undo")}
             </Button>
+            {!isUpdate && <OpenSkillLink name={entry.name} />}
           </p>
         )}
         {entry.state === "saved" && entry.undoFailed && (
@@ -409,19 +451,7 @@ export function SkillApprovalCard({ entry }: { entry: SkillApprovalEntry }): Rea
         {entry.state === "saved" && !entry.versionId && (
           <p className="mt-2 text-foreground">
             {t("skills.approval.saved")}
-            {openSkill && (
-              <>
-                {" ·"}
-                <Button
-                  size="sm"
-                  variant="link"
-                  className={INLINE_LINK_CLASS}
-                  onClick={() => openSkill(entry.name)}
-                >
-                  {t("skills.approval.openSkill")}
-                </Button>
-              </>
-            )}
+            <OpenSkillLink name={entry.name} />
           </p>
         )}
         {entry.state === "undone" && (
@@ -451,7 +481,9 @@ export function SkillApprovalCard({ entry }: { entry: SkillApprovalEntry }): Rea
           <Button
             size="sm"
             onClick={() => {
-              leaveEditingAndFocusCard();
+              // Editing stays on: the editor hides while saving, and comes back with the card
+              // when main refuses the draft and says why.
+              cardRef.current?.focus();
               void saveSkillApproval(entry.key);
             }}
           >
@@ -472,6 +504,77 @@ export function SkillApprovalCard({ entry }: { entry: SkillApprovalEntry }): Rea
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A card in a reopened chat. The live card lived in this window's memory, so this one is
+ * rebuilt from the call's saved outcome: what came of it, with Undo or Open skill still there.
+ */
+export function SkillCardSummary({ record }: { record: SkillCardRecord }): ReactElement {
+  const { t } = useTranslation();
+  const { name, versionId, status } = record;
+  const undo = useSkillApprovalStore((state) =>
+    versionId ? state.undos[skillVersionKey(name, versionId)] : undefined
+  );
+  const isUpdate = record.kind === "update";
+  const canUndo = status === "saved" && versionId && undo !== "undone" && undo !== "changed_since";
+
+  return (
+    <div data-skill-card-record={name} data-state={status} className={APPROVAL_CARD_CLASS}>
+      <p className="font-medium text-foreground">
+        {t(isUpdate ? "skills.approval.updateHeader" : "skills.approval.createHeader")}
+      </p>
+      <p className="mt-1 font-medium" dir="auto">
+        {record.title}
+      </p>
+      <div role="status" aria-live="polite" className="text-xs">
+        {canUndo && (
+          <p className="mt-2 text-foreground">
+            {t("skills.approval.updated")} ·
+            <Button
+              size="sm"
+              variant="link"
+              className={INLINE_LINK_CLASS}
+              disabled={undo === "undoing"}
+              onClick={() => void undoSkillVersion(name, versionId)}
+            >
+              {t("skills.approval.undo")}
+            </Button>
+            {!isUpdate && <OpenSkillLink name={name} />}
+          </p>
+        )}
+        {canUndo && undo === "failed" && (
+          <p className="mt-1 text-destructive">{t("skills.approval.undoFailed")}</p>
+        )}
+        {undo === "undone" && (
+          <p className="mt-2 text-muted-foreground">{t("skills.approval.undone")}</p>
+        )}
+        {undo === "changed_since" && (
+          <p className="mt-2 text-muted-foreground">{t("skills.approval.undoStale")}</p>
+        )}
+        {status === "saved" && !versionId && (
+          <p className="mt-2 text-foreground">
+            {t("skills.approval.saved")}
+            <OpenSkillLink name={name} />
+          </p>
+        )}
+        {status === "skipped" && (
+          <p className="mt-2 text-muted-foreground">
+            {isUpdate ? t("skills.approval.skippedUpdate") : t("skills.approval.skippedCreate")}
+          </p>
+        )}
+        {status === "failed" && (
+          <p className="mt-2 text-destructive">{t("skills.approval.failed")}</p>
+        )}
+        {status === "changed" && (
+          <p className="mt-2 text-muted-foreground">{t("skills.approval.outdated")}</p>
+        )}
+        {status === "not_saved" && (
+          <p className="mt-2 text-muted-foreground">{t("skills.approval.notSaved")}</p>
+        )}
+      </div>
     </div>
   );
 }

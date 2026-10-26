@@ -92,6 +92,7 @@ test("a request shows a pending entry and settles once", async (t) => {
   assert.deepEqual(await outcome, {
     state: "saved",
     name: "follow-up-email-from-notes",
+    title: PROPOSAL.title,
     edited: false,
   });
   assert.equal(entryOf("call-1").state, "saved");
@@ -148,6 +149,7 @@ test("saving writes the edited draft and reports the edit", async (t) => {
   assert.deepEqual(await outcome, {
     state: "saved",
     name: "follow-up-email-from-notes",
+    title: "Call follow-up",
     edited: true,
   });
   assert.equal(entryOf("call-1").original.title, PROPOSAL.title);

@@ -45,6 +45,7 @@ import {
   buildSkillBlock,
   buildSkillCatalog,
   fitSkillBlock,
+  skillNotUsedNote,
   withSkillContext,
 } from "../../utils/skillContext";
 import { pickSkillForRequest } from "../../utils/localSkillPick";
@@ -446,6 +447,9 @@ export function useChatStreaming({
           !isCloudAgent && (isLocalProvider || isLanAgent) ? "selfHosted" : "hosted";
 
         let usableSkills: SkillSummary[] = [];
+        // The skills this chat may use: the user's, less those taken off it. The creator still
+        // hears of every skill, so it doesn't propose one the user already has.
+        let offeredSkills: SkillSummary[] = [];
         const removedSkills = new Set(options?.removedSkills);
         let activeRefs: SkillRef[] = skillsEnabled
           ? activeSkillNames(allMessages, options?.attachedSkill).filter(
@@ -458,6 +462,7 @@ export function useChatStreaming({
           usableSkills = useSkillsStore
             .getState()
             .skills.filter((skill) => skill.enabled && skill.valid);
+          offeredSkills = usableSkills.filter((skill) => !removedSkills.has(skill.name));
         }
 
         const scope = searchScopeRef.current;
@@ -489,8 +494,9 @@ export function useChatStreaming({
           // Triggers ride in the tool description, so a snippet edit rebuilds the registry.
           const snippetKey = settings.snippets.map((s) => s.trigger).join("|");
           // load_skill names the usable skills and a budget for this model.
+          const creatorAttached = Boolean(options?.attachedSkill?.builtin);
           const skillKey = skillsEnabled
-            ? `${contextTier}:${usableSkills.map((s) => `${s.name}@${s.updatedAt}`).join("|")}`
+            ? `${contextTier}:${creatorAttached}:${offeredSkills.map((s) => `${s.name}@${s.updatedAt}`).join("|")}`
             : "";
           const keepNotesUnchanged = !!options?.keepNotesUnchanged;
           const cacheKey = `${settings.isSignedIn}-${calendarConnected}-${settings.cloudBackupEnabled}-${scopeKey}-${webSearchEnabled}-${productHelpEnabled}-${snippetKey}-${connectors?.emailDraftTarget ?? "no-connectors"}-${connectors?.readyConnectorIds.join(",") ?? ""}-${keepNotesUnchanged}-${skillKey}`;
@@ -515,7 +521,7 @@ export function useChatStreaming({
               keepNotesUnchanged,
               skills: skillsEnabled
                 ? {
-                    usable: usableSkills,
+                    usable: offeredSkills,
                     activeNames: () => carriedSkillNamesRef.current,
                     read: (ref) =>
                       window.electronAPI?.skillsReadForModel?.(ref) ?? Promise.resolve(null),
@@ -523,6 +529,7 @@ export function useChatStreaming({
                     markUsed: (name) =>
                       void window.electronAPI?.skillsMarkUsed?.(name).catch(() => {}),
                     maxTokens: SKILL_CONTEXT_MAX_TOKENS[contextTier],
+                    creatorAttached,
                   }
                 : undefined,
             });
@@ -563,10 +570,7 @@ export function useChatStreaming({
           registry === null &&
           !options?.attachedSkill &&
           options?.allowSkillPick !== false
-            ? pickSkillForRequest(
-                userText,
-                usableSkills.filter((skill) => !removedSkills.has(skill.name))
-              )
+            ? pickSkillForRequest(userText, offeredSkills)
             : null;
         if (picked) {
           activeRefs = [
@@ -578,13 +582,23 @@ export function useChatStreaming({
         const carried = new Set<string>();
         let skillRoom: number = SKILL_CONTEXT_MAX_TOKENS[contextTier];
         for (const ref of activeRefs) {
-          // Switched off or broken since it was attached or loaded.
-          if (!ref.builtin && !usableSkills.some((skill) => skill.name === ref.name)) continue;
-          // A skill that can't be read is left out; the turn still goes.
+          // A skill switched off, broken or unreadable since it was attached or loaded is left
+          // out, and the turn still goes. The attached one's chip still shows, so the model is
+          // told it isn't used, to say so.
+          const leftOut = (): void => {
+            if (ref === options?.attachedSkill) skillBlocks.push(skillNotUsedNote(ref.name));
+          };
+          if (!ref.builtin && !usableSkills.some((skill) => skill.name === ref.name)) {
+            leftOut();
+            continue;
+          }
           const skill = await window.electronAPI
             ?.skillsReadForModel?.({ ...ref, withFiles: registry === null })
             .catch(() => null);
-          if (!skill) continue;
+          if (!skill) {
+            leftOut();
+            continue;
+          }
           const connectedApps = connectorsAvailable
             ? readyConnectorIds().map((id) => CONNECTOR_NAMES[id] ?? id)
             : [];
@@ -602,15 +616,17 @@ export function useChatStreaming({
             blockOptions
           );
           const whole = !cut;
-          // A model with tools reads a cut skill whole with load_skill, unless nothing came before
-          // it to take its room.
-          if (!whole && registry !== null && skillBlocks.length > 0) continue;
+          // The first skill had all the room load_skill has, so even cut it is as much of it as
+          // the model can get. A later one was cut by the skills before it: a model with tools
+          // reads it with load_skill, which gives it that whole room.
+          const first = skillBlocks.length === 0;
+          if (!whole && registry !== null && !first) continue;
           const block = fitted + creatorContext;
           skillRoom -= estimateNoteTokens(block);
           skillBlocks.push(block);
-          // Only a skill carried whole is "already loaded" for load_skill; without tools there is
-          // no load_skill, and what's carried is what the picked chip names.
-          if (!ref.builtin && (whole || registry === null)) carried.add(ref.name);
+          // A carried skill is "already loaded" for load_skill, which would only send it again;
+          // without tools there is no load_skill, and what's carried is what the picked chip names.
+          if (!ref.builtin && (whole || first || registry === null)) carried.add(ref.name);
           if (skillRoom <= 0) break;
         }
         if (cancelled() || !mountedRef.current) return;
@@ -660,7 +676,7 @@ export function useChatStreaming({
               ? { tones: settings.toneStyles, destination: options?.destinationAppCategory }
               : undefined,
             skillCatalog: registry?.get("load_skill")
-              ? buildSkillCatalog(usableSkills, SKILL_CATALOG_MAX_TOKENS[contextTier])
+              ? buildSkillCatalog(offeredSkills, SKILL_CATALOG_MAX_TOKENS[contextTier])
               : undefined,
             skillContent: skillBlocks.length > 0,
           }),

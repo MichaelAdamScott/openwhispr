@@ -178,3 +178,21 @@ export interface SkillProposalCheck {
   /** The hash of the skill saving would change, for its save to compare. */
   hash?: string;
 }
+
+/**
+ * How a skill card ended, as its tool returns it. It is saved with the chat, so a reopened
+ * chat still shows the outcome (and Undo), and later turns know what was saved. Never the
+ * skill's text: that stays in the skill's folder.
+ */
+export interface SkillCardRecord {
+  status: "saved" | "skipped" | "failed" | "changed" | "not_saved";
+  kind: "create" | "update";
+  /** The folder it wrote, or would have. */
+  name: string;
+  /** The title the card showed. */
+  title: string;
+  /** The copy Undo restores, after a save that replaced a skill's folder. */
+  versionId?: string;
+  /** What the model is told. */
+  message: string;
+}

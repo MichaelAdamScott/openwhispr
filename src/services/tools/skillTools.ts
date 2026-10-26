@@ -1,6 +1,7 @@
 import { buildSkillBlock, buildSkillFileBlock } from "../../utils/skillContext";
 import { requestSkillApproval, type SkillApprovalOutcome } from "../../stores/skillApprovalStore";
 import type {
+  SkillCardRecord,
   SkillForModel,
   SkillProposal,
   SkillRef,
@@ -22,6 +23,8 @@ export interface SkillToolDeps {
   markUsed: (name: string) => void;
   /** What one load may hand the model, in estimated tokens. */
   maxTokens: number;
+  /** The built-in skill creator is attached, so a skill can be proposed with none saved yet. */
+  creatorAttached: boolean;
 }
 
 const failure = (displayText: string): ToolResult => ({ success: false, data: null, displayText });
@@ -137,6 +140,28 @@ function outcomeText(outcome: SkillApprovalOutcome, done: "Saved" | "Updated"): 
   }
 }
 
+// An object, so it is saved with the chat as the call's metadata: a reopened chat rebuilds the
+// card's outcome (and its Undo) from it, and later turns read what was saved. It never holds
+// the skill's text. The card stands in for the step, so the step has no text of its own.
+function cardResult(
+  outcome: SkillApprovalOutcome,
+  card: Pick<SkillCardRecord, "kind" | "name" | "title">
+): ToolResult {
+  const message = outcomeText(outcome, card.kind === "create" ? "Saved" : "Updated");
+  const record: SkillCardRecord =
+    outcome.state === "saved"
+      ? {
+          ...card,
+          status: "saved",
+          name: outcome.name,
+          title: outcome.title,
+          ...(outcome.versionId ? { versionId: outcome.versionId } : {}),
+          message,
+        }
+      : { ...card, status: outcome.state, message };
+  return { success: true, data: record, displayText: "" };
+}
+
 export function createProposeSkillTool(): ToolDefinition {
   return {
     name: "propose_skill",
@@ -199,8 +224,7 @@ export function createProposeSkillTool(): ToolDefinition {
         baseHash: check.hash,
         draft: proposal,
       });
-      // The card stands in for the step, so the step has no text of its own.
-      return { success: true, data: outcomeText(outcome, "Saved"), displayText: "" };
+      return cardResult(outcome, { kind: "create", name: check.name, title: proposal.title });
     },
   };
 }
@@ -327,7 +351,7 @@ export function createUpdateSkillTool(usable: SkillSummary[]): ToolDefinition {
         learnedFrom: await learnedFromNote(args.learned_from_note_id),
         baseHash: check.hash,
       });
-      return { success: true, data: outcomeText(outcome, "Updated"), displayText: "" };
+      return cardResult(outcome, { kind: "update", name: skill.name, title: skill.displayName });
     },
   };
 }
