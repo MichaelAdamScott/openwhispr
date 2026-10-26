@@ -425,6 +425,45 @@ it('closes the keyboard when a key is pasted, but not while typing', () => {
   expect(dismiss).toHaveBeenCalledTimes(1);
 });
 
+it('keeps Android key input active when rapid typing arrives in batches', async () => {
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  const dismiss = jest.spyOn(Keyboard, 'dismiss');
+  mockCredentialStatus.mockResolvedValue({ isConfigured: true });
+  mockScope = 'notes';
+  mockConfig = {
+    inference: {
+      notes: {
+        mode: 'providers',
+        providerId: 'custom',
+        endpoint: 'http://10.0.2.2:18329',
+        modelId: 'ow-byok-local-test',
+        credentialRef: 'custom.http://10.0.2.2:18329',
+      },
+    },
+  };
+  try {
+    render(<WorkflowSettingsScreen />);
+    await screen.findByText('Saved');
+    const input = screen.getByLabelText('API key');
+    fireEvent.changeText(input, 'fix');
+    expect(dismiss).not.toHaveBeenCalled();
+    fireEvent.changeText(input, 'fixture333b');
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('API key').props.value).toBe('fixture333b');
+    expect(screen.getByLabelText('Model ID').props.value).toBe('ow-byok-local-test');
+    fireEvent.press(screen.getByText('Save'));
+    await waitFor(() =>
+      expect(mockSetCredential).toHaveBeenCalledWith('custom.http://10.0.2.2:18329', {
+        apiKey: 'fixture333b',
+      }),
+    );
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  } finally {
+    Platform.OS = originalOS;
+  }
+});
+
 it('checks a provider from Local Mode, since a check sends no user content', async () => {
   mockActiveMode = 'private';
   render(<WorkflowSettingsScreen />);

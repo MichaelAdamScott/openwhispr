@@ -1173,8 +1173,11 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                     value={apiKey}
                     style={Platform.OS === 'android' ? PROVIDER_IDENTIFIER_STYLE : undefined}
                     onChangeText={(next) => {
-                      // A paste or password-manager fill arrives as one change; typing adds one character.
-                      if (next.length - apiKey.length > 1) Keyboard.dismiss();
+                      // Android can batch typed characters; dismissing here can move the
+                      // remaining keystrokes into another field. Explicit actions dismiss it.
+                      if (Platform.OS !== 'android' && next.length - apiKey.length > 1) {
+                        Keyboard.dismiss();
+                      }
                       setApiKey(next);
                     }}
                     secureTextEntry
