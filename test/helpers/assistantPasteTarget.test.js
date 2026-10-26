@@ -20,16 +20,65 @@ function make(platform, { pid = 222, window = null, focused = null, windowPid = 
   });
 }
 
-test("a voice command adopts the app its recording started over, once", async () => {
+test("a voice command adopts the app its recording started over", async () => {
   const target = make("darwin");
 
   assert.equal(await target.adopt(), false, "no recording, nothing to adopt");
   target.noteRecordingStart();
   assert.equal(await target.adopt(), true);
   assert.deepEqual(await target.current(), { pid: 222 });
+});
 
-  // A later command without a recording of its own (none happens) adopts nothing.
-  assert.equal(await target.adopt(), false);
+// A Mac whose frontmost app changes between recordings.
+function macWithFront(pids) {
+  return new AssistantPasteTarget({
+    textEditMonitor: { captureTargetPid: async () => pids.shift() },
+    platform: "darwin",
+    ownPid: 100,
+  });
+}
+
+test("a follow-up spoken over another app pastes there", async () => {
+  const target = macWithFront([222, 333]);
+  target.noteRecordingStart();
+  await target.adopt();
+
+  // The user moved to another app and spoke a follow-up there.
+  target.noteRecordingStart();
+  assert.equal(await target.adopt(), true);
+
+  assert.deepEqual(await target.current(), { pid: 333 });
+});
+
+test("a follow-up spoken over the panel, or with no capture, keeps the conversation's app", async () => {
+  const target = macWithFront([222, 100]);
+  target.noteRecordingStart();
+  await target.adopt();
+
+  target.noteRecordingStart(); // OpenWhispr in front
+  assert.equal(await target.adopt(), true);
+  assert.deepEqual(await target.current(), { pid: 222 });
+
+  assert.equal(await target.adopt(), true, "nothing recorded");
+  assert.deepEqual(await target.current(), { pid: 222 });
+});
+
+test("a close while a command adopts its app leaves no target behind", async () => {
+  let resolveCapture;
+  const target = new AssistantPasteTarget({
+    textEditMonitor: {
+      captureTargetPid: () => new Promise((resolve) => (resolveCapture = resolve)),
+    },
+    platform: "darwin",
+    ownPid: 100,
+  });
+  target.noteRecordingStart();
+  const adopting = target.adopt();
+
+  target.clear();
+  resolveCapture(222);
+  await adopting;
+
   assert.equal(await target.current(), null);
 });
 
@@ -70,12 +119,33 @@ test("another app's window is a target, and Linux checks focus came back to it",
   linux.noteRecordingStart();
   assert.equal(await linux.adopt(), true);
   const adopted = await linux.current();
-  assert.equal(await linux.isFocused(adopted), true);
+  assert.equal(await linux.isInFront(adopted), true);
 
   const moved = make("linux", { window: xterm, focused: { kind: "x11-window", id: "8" } });
   moved.noteRecordingStart();
   await moved.adopt();
-  assert.equal(await moved.isFocused(await moved.current()), false);
+  assert.equal(await moved.isInFront(await moved.current()), false);
+});
+
+test("Windows brings the command's window forward before a paste, and says when it can't", async () => {
+  const terminal = { kind: "win-hwnd", id: "0x2", exeName: "WindowsTerminal.exe" };
+  const windows = make("win32", { window: terminal });
+  const restored = [];
+  let comesForward = true;
+  windows.selectionManager.restoreWinTarget = async (window) => {
+    restored.push(window);
+    return comesForward;
+  };
+  windows.noteRecordingStart();
+  await windows.adopt();
+  const adopted = await windows.current();
+
+  assert.equal(await windows.isInFront(adopted), true);
+  comesForward = false;
+  assert.equal(await windows.isInFront(adopted), false, "closed, or Windows refused it");
+  windows.selectionManager.restoreWinTarget = async () => Promise.reject(new Error("spawn"));
+  assert.equal(await windows.isInFront(adopted), false);
+  assert.deepEqual(restored, [terminal, terminal]);
 });
 
 test("a capture that fails is no target, not a rejected promise", async () => {

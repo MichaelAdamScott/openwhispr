@@ -7,9 +7,10 @@ import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 
 // What a paste must not carry: line breaks of any kind, which a terminal without bracketed
 // paste runs as they land, other control characters (Tab completes, Ctrl-O runs the line, ESC
-// starts a sequence), and invisible or direction-changing ones that make what is shown differ
-// from what is pasted.
-const UNPASTEABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+// starts a sequence), invisible or direction-changing ones that make what is shown differ
+// from what is pasted (Hangul fillers and variation selectors among them), and every space
+// but the plain one: a no-break space looks like one but a shell reads it as part of a word.
+const UNPASTEABLE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]|(?! )\p{Zs}/u;
 
 /**
  * Copy for a code block in an answer, and Paste into app where a paste target exists. Paste is

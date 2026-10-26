@@ -3332,10 +3332,11 @@ class IPCHandlers {
         }
       }
 
+      // macOS confirmed the app came forward above; elsewhere what's in front gets the paste.
       if (
-        process.platform === "linux" &&
+        process.platform !== "darwin" &&
         assistantTarget &&
-        !(await assistantPasteTarget.isFocused(assistantTarget))
+        !(await assistantPasteTarget.isInFront(assistantTarget))
       ) {
         return noTarget;
       }

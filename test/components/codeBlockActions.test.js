@@ -181,6 +181,12 @@ test("a line with control, invisible or direction characters offers Copy only", 
     "rm \u202eetadpu",
     "ls\u200b-la",
     "ls\ufeff",
+    // Spaces that look plain but aren't, and fillers that show nothing.
+    "ls\u00a0-la",
+    "ls\u3000-la",
+    "ls\u2003-la",
+    "ls\u034f",
+    "echo \u3164",
   ]) {
     await t.test(JSON.stringify(code), async (st) => {
       const { button } = await mountActions(st, { code, paste: true });

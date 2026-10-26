@@ -1159,12 +1159,12 @@ class WindowManager {
       return;
     }
 
-    // Each recording started over another app may become a voice command the panel answers;
-    // the panel takes that app as its paste target only then (assistantPasteTarget.js).
+    // Each recording may become a voice command the panel answers; the panel takes the app it
+    // was started over as its paste target only then (assistantPasteTarget.js). Follow-ups
+    // spoken while the panel is open count too, so a capture is never an older recording's.
     if (
       this._dictationLifecycleState === DICTATION_LIFECYCLE.IDLE &&
-      nextState !== DICTATION_LIFECYCLE.IDLE &&
-      !this._assistantPanelOpen
+      nextState !== DICTATION_LIFECYCLE.IDLE
     ) {
       this.assistantPasteTarget?.noteRecordingStart();
     }

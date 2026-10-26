@@ -439,6 +439,7 @@ test("Paste into app on macOS brings forward the command's app, never the last d
 
 test("Paste into app on Windows restores the command's window", async () => {
   const options = [];
+  let inFront = true;
   target.selectionManager = {
     getWinTarget: async () => assert.fail("must not use the last dictation's window"),
   };
@@ -446,17 +447,25 @@ test("Paste into app on Windows restores the command's window", async () => {
     isOnboardingDemoActive: () => false,
     assistantPasteTarget: {
       current: async () => ({ window: { kind: "win-hwnd", id: "0xbeef", exeName: "pwsh.exe" } }),
+      isInFront: async () => inFront,
     },
   };
   target.clipboardManager = {
     pasteText: async (_text, pasteOptions) => options.push(pasteOptions),
   };
+  const paste = () =>
+    handlers.get("paste-text")({ sender: {} }, "dir", { raw: true, assistantTarget: true });
 
-  await onPlatform("win32", () =>
-    handlers.get("paste-text")({ sender: {} }, "dir", { raw: true, assistantTarget: true })
-  );
+  await onPlatform("win32", async () => {
+    assert.deepEqual(await paste(), { success: true, pasted: true });
+    // The window was closed, or Windows refused to bring it forward: the helper would
+    // paste into whatever is in front instead.
+    inFront = false;
+    assert.deepEqual(await paste(), { success: false, pasted: false, reason: "no-target" });
+  });
   target.selectionManager = null;
 
+  assert.equal(options.length, 1);
   assert.equal(options[0].targetWindow, "0xbeef");
   assert.equal("assistantTarget" in options[0], false);
 });
@@ -468,7 +477,7 @@ test("Paste into app on Linux pastes only once focus is back on the command's ap
     isOnboardingDemoActive: () => false,
     assistantPasteTarget: {
       current: async () => ({ window: { kind: "x11-window", id: "7" } }),
-      isFocused: async () => focused,
+      isInFront: async () => focused,
     },
   };
   target.clipboardManager = { pasteText: async () => (pasted += 1) };

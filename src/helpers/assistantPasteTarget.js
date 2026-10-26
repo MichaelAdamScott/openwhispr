@@ -3,9 +3,10 @@ const path = require("path");
 /**
  * The app a voice command was spoken over, where the assistant panel's Paste into app goes.
  *
- * Each recording started while the panel is closed captures the app in front. The panel takes
- * that capture only for the voice command it answers, and lets it go when it closes, so a
- * paste never lands in an app from an older dictation. A panel opened another way (the tray,
+ * Each recording captures the app in front, so the capture a voice command adopts is always
+ * its own recording's, never an older dictation's. A new command takes its app; a follow-up
+ * takes the app it was spoken over when that is another app, and otherwise keeps the one the
+ * conversation had. The panel lets it go when it closes. A panel opened another way (the tray,
  * the pill menu) has none, and neither does one opened over OpenWhispr itself: the panel
  * offers Copy only there.
  */
@@ -26,16 +27,20 @@ class AssistantPasteTarget {
     this._adopted = null;
   }
 
-  /** A recording started with the panel closed: capture the app it was started over. */
+  /** A recording started: capture the app it was started over. */
   noteRecordingStart() {
     // A failed capture is a missing target, never a rejected promise someone awaits later.
     this._recorded = this._capture().catch(() => null);
   }
 
-  /** The panel answers a voice command: its paste goes to that command's app. */
+  /** The panel answers a voice command: its paste goes to the app that command was spoken over. */
   async adopt() {
-    this._adopted = this._recorded;
+    const recorded = this._recorded;
+    const previous = this._adopted;
     this._recorded = null;
+    // Spoken with OpenWhispr in front (the panel itself), it keeps the conversation's app. Set
+    // at once, so a close that clears it meanwhile isn't undone when the capture settles.
+    this._adopted = this._usable(recorded).then((target) => target ?? this._usable(previous));
     return (await this.current()) !== null;
   }
 
@@ -44,8 +49,12 @@ class AssistantPasteTarget {
   }
 
   /** The adopted app, or null when there is none or it is OpenWhispr. */
-  async current() {
-    const target = await this._adopted;
+  current() {
+    return this._usable(this._adopted);
+  }
+
+  async _usable(capture) {
+    const target = await capture;
     if (!target) return null;
     if (this.platform === "darwin") return target.pid && target.pid !== this.ownPid ? target : null;
     if (this.platform === "win32") {
@@ -60,8 +69,19 @@ class AssistantPasteTarget {
     return pid != null && String(pid) === String(this.ownPid) ? null : target;
   }
 
-  /** Linux pastes into whatever has focus, so the paste first checks focus is back on the app. */
-  async isFocused(target) {
+  /**
+   * Windows and Linux paste into whatever is in front, so the paste first makes sure that is the
+   * command's app: Windows brings its window forward and checks it came, Linux checks focus came
+   * back to it.
+   */
+  async isInFront(target) {
+    if (this.platform === "win32") {
+      return Boolean(
+        await Promise.resolve(this.selectionManager?.restoreWinTarget?.(target.window)).catch(
+          () => false
+        )
+      );
+    }
     const focused = await Promise.resolve(this.selectionManager?._getLinuxTarget?.()).catch(
       () => null
     );

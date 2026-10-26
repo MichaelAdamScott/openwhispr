@@ -156,16 +156,15 @@ export function useAssistantPanel({
       // already streaming into a visible conversation, and delivering it to
       // the external caret would snap that surface away mid-read.
       const delivery = openRef.current ? null : (command.delivery ?? null);
-      // A follow-up keeps the app the conversation started over; a new command takes its own.
-      if (!openRef.current) {
-        const id = commandIdRef.current;
-        setCanPasteIntoApp(false);
-        void Promise.resolve(window.electronAPI?.assistantPasteTarget?.("adopt"))
-          .catch(() => false)
-          .then((available) => {
-            if (id === commandIdRef.current) setCanPasteIntoApp(available === true);
-          });
-      }
+      // A command's paste goes to the app it was spoken over. A follow-up spoken over the panel
+      // itself keeps the conversation's app, so its Paste stays offered while main decides.
+      const id = commandIdRef.current;
+      if (!openRef.current) setCanPasteIntoApp(false);
+      void Promise.resolve(window.electronAPI?.assistantPasteTarget?.("adopt"))
+        .catch(() => false)
+        .then((available) => {
+          if (id === commandIdRef.current) setCanPasteIntoApp(available === true);
+        });
       beginThinking();
       setPendingCommand({
         id: commandIdRef.current,

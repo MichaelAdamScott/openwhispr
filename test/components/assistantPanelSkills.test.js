@@ -328,7 +328,7 @@ test("Paste into app waits for the answer to finish streaming", async (t) => {
   assert.match(markup, /common\.copy/);
 });
 
-test("a voice command adopts its app as the paste target; the tray and a close drop it", async (t) => {
+test("each voice command adopts its app as the paste target; the tray and a close drop it", async (t) => {
   let root = null;
   t.after(async () => {
     if (root) await React.act(async () => root.unmount());
@@ -367,6 +367,12 @@ test("a voice command adopts its app as the paste target; the tray and a close d
 
   await React.act(async () => assistant.handleCommand({ text: "How do I list files?" }));
   assert.deepEqual(calls, ["adopt"]);
+  assert.equal(assistant.canPasteIntoApp, true);
+
+  // A follow-up spoken into the open panel asks again: main moves Paste to the app it was spoken
+  // over, or keeps the conversation's.
+  await React.act(async () => assistant.handleCommand({ text: "Sorted by size?" }));
+  assert.deepEqual(calls, ["adopt", "adopt"]);
   assert.equal(assistant.canPasteIntoApp, true);
 
   await React.act(async () => assistant.handleClose());
