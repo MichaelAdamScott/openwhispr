@@ -2252,7 +2252,7 @@
       "selfHostedStreamingNote": "Requer um servidor que suporte transcrição em streaming."
     },
     "llms": {
-      "title": "Modelos de linguagem",
+      "title": "Modelo de linguagem",
       "description": "Configure modelos para limpeza, formatação de notas e chat",
       "tabs": {
         "dictationCleanup": "Limpeza do ditado",
@@ -2423,6 +2423,7 @@
         "nameHint": "O nome do espaço de trabalho pode ter até 65 caracteres",
         "iconLabel": "Ícone do espaço de trabalho",
         "iconHint": "Este ícone aparece na sua barra lateral e nas notificações.",
+        "roleLabel": "Sua função",
         "saved": "Espaço de trabalho atualizado",
         "ownerTitle": "Proprietário do espaço de trabalho",
         "ownerDescription": "Transfira a propriedade para outro membro do espaço de trabalho.",

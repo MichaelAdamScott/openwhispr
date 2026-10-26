@@ -2444,6 +2444,7 @@
         "nameHint": "工作区名称最多可包含 65 个字符",
         "iconLabel": "工作区图标",
         "iconHint": "此图标会显示在你的侧边栏和通知中。",
+        "roleLabel": "你的角色",
         "saved": "工作区已更新",
         "ownerTitle": "工作区所有者",
         "ownerDescription": "将所有权转让给另一位工作区成员。",

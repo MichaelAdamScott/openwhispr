@@ -193,3 +193,13 @@ test("icon shows initials and no upload control", async (t) => {
   assert.match(markup, />AR</);
   assert.doesNotMatch(markup, /<input[^>]*type="file"/);
 });
+
+test("shows the user's own role", async (t) => {
+  const module = await loadSection(t);
+
+  for (const role of ["owner", "admin", "member"]) {
+    const markup = render(module, { role });
+    assert.match(markup, /settingsPage\.workspace\.general\.roleLabel/);
+    assert.ok(markup.includes(`settingsPage.workspace.role.${role}`));
+  }
+});

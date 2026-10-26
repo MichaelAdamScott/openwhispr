@@ -1719,6 +1719,7 @@
         "nameHint": "Your workspace name can be up to 65 characters",
         "iconLabel": "Workspace icon",
         "iconHint": "This icon appears in your sidebar and notifications.",
+        "roleLabel": "Your role",
         "saved": "Workspace updated",
         "ownerTitle": "Workspace Owner",
         "ownerDescription": "Transfer ownership to another workspace member.",
@@ -2557,7 +2558,7 @@
       "title": "Prompt Studio"
     },
     "speechToText": {
-      "title": "Speech-to-Text",
+      "title": "Speech to Text",
       "description": "Pick an engine for dictation and note recording",
       "tabs": {
         "dictation": "Dictation",
@@ -2567,7 +2568,7 @@
       "selfHostedStreamingNote": "Requires a server that supports streaming transcription."
     },
     "llms": {
-      "title": "Language Models",
+      "title": "Language Model",
       "description": "Configure models for cleanup, note formatting, and chat",
       "tabs": {
         "dictationCleanup": "Dictation Cleanup",

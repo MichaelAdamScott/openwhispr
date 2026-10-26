@@ -1719,6 +1719,7 @@
         "nameHint": "Der Workspace-Name darf bis zu 65 Zeichen lang sein",
         "iconLabel": "Workspace-Icon",
         "iconHint": "Dieses Icon erscheint in Ihrer Seitenleiste und in Benachrichtigungen.",
+        "roleLabel": "Ihre Rolle",
         "saved": "Workspace aktualisiert",
         "ownerTitle": "Workspace-Inhaber",
         "ownerDescription": "Übertragen Sie die Inhaberschaft an ein anderes Workspace-Mitglied.",
@@ -2567,7 +2568,7 @@
       "selfHostedStreamingNote": "Erfordert einen Server, der Streaming-Transkription unterstützt."
     },
     "llms": {
-      "title": "Sprachmodelle",
+      "title": "Sprachmodell",
       "description": "Konfigurieren Sie Modelle für Bereinigung, Notizformatierung und Chat",
       "tabs": {
         "dictationCleanup": "Diktat-Bereinigung",
@@ -3134,32 +3135,32 @@
     },
     "transfer": {
       "title": "Neuen Inhaber wählen",
-      "body": "Wähle ein bestehendes Mitglied des Workspace. Nach der Übertragung wirst du Administrator.",
+      "body": "Wählen Sie ein bestehendes Mitglied des Workspace. Nach der Übertragung werden Sie Administrator.",
       "newOwner": "Neuer Inhaber",
       "placeholder": "Mitglied des Workspace wählen",
       "candidate": "{{name}} · {{role}}",
       "confirmTitle": "Inhaberschaft an {{name}} übertragen?",
-      "confirmBody": "{{name}} wird Inhaber von {{workspace}}. Du wirst Administrator.",
+      "confirmBody": "{{name}} wird Inhaber von {{workspace}}. Sie werden Administrator.",
       "submit": "Inhaberschaft übertragen",
       "transferringTitle": "Inhaberschaft wird übertragen…",
-      "transferringBody": "Lass dieses Fenster geöffnet. Die Inhaberschaft ändert sich, sobald die Übertragung abgeschlossen ist.",
+      "transferringBody": "Lassen Sie dieses Fenster geöffnet. Die Inhaberschaft ändert sich, sobald die Übertragung abgeschlossen ist.",
       "transferring": "Wird übertragen…",
-      "failed": "Die Inhaberschaft konnte nicht übertragen werden. Du bist weiterhin Inhaber. Versuche es erneut.",
-      "noCandidates": "Lade jemanden in {{workspace}} ein, bevor du die Inhaberschaft überträgst.",
-      "done": "Inhaberschaft des Workspace an {{name}} übertragen. Du bist jetzt Administrator."
+      "failed": "Die Inhaberschaft konnte nicht übertragen werden. Sie sind weiterhin Inhaber. Versuchen Sie es erneut.",
+      "noCandidates": "Laden Sie jemanden in {{workspace}} ein, bevor Sie die Inhaberschaft übertragen.",
+      "done": "Inhaberschaft des Workspace an {{name}} übertragen. Sie sind jetzt Administrator."
     },
     "intro": {
       "workspace": {
-        "title": "Dein Workspace ist deine Basis",
-        "body": "Alle in deinem Unternehmen arbeiten hier. Deine privaten Notizen bleiben privat, bis du sie teilst."
+        "title": "Ihr Workspace ist Ihre Basis",
+        "body": "Alle in Ihrem Unternehmen arbeiten hier. Ihre privaten Notizen bleiben privat, bis Sie sie teilen."
       },
       "teamspaces": {
         "title": "Notizen in Teamspaces teilen",
-        "body": "Erstelle in einem Workspace einen Teamspace für ein Projekt oder Thema, etwa Kundengespräche. Alle, die du hinzufügst, können seine Notizen lesen und bearbeiten."
+        "body": "Erstellen Sie in einem Workspace einen Teamspace für ein Projekt oder Thema, etwa Kundengespräche. Alle, die Sie hinzufügen, können seine Notizen lesen und bearbeiten."
       },
       "teams": {
         "title": "Ein ganzes Team auf einmal hinzufügen",
-        "body": "Fasse Personen in einem Team zusammen, etwa Vertrieb, und füge das Team dann in einem Schritt zu jedem Teamspace hinzu."
+        "body": "Fassen Sie Personen in einem Team zusammen, etwa Vertrieb, und fügen Sie das Team dann in einem Schritt zu jedem Teamspace hinzu."
       },
       "getStarted": "Los geht's",
       "progress": "Schritt {{current}} von {{total}}"

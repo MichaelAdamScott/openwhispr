@@ -221,6 +221,15 @@ function GeneralPage({
         <MemberAvatar name={workspace.name} email={null} size="lg" />
       </div>
 
+      <div>
+        <p className="text-xs font-medium text-foreground">
+          {t("settingsPage.workspace.general.roleLabel")}
+        </p>
+        <p className="text-xs text-muted-foreground/80 mt-0.5">
+          {t(`settingsPage.workspace.role.${workspace.role}`)}
+        </p>
+      </div>
+
       <EnterpriseConsoleRow workspace={workspace} />
 
       {canTransfer && (

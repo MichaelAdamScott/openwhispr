@@ -2273,7 +2273,7 @@
       "selfHostedStreamingNote": "Richiede un server che supporti la trascrizione in streaming."
     },
     "llms": {
-      "title": "Modelli linguistici",
+      "title": "Modello linguistico",
       "description": "Configura modelli per pulizia, formattazione note e chat",
       "tabs": {
         "dictationCleanup": "Pulizia della dettatura",
@@ -2444,6 +2444,7 @@
         "nameHint": "Il nome dell'area di lavoro può contenere fino a 65 caratteri",
         "iconLabel": "Icona dell'area di lavoro",
         "iconHint": "Questa icona appare nella barra laterale e nelle notifiche.",
+        "roleLabel": "Il tuo ruolo",
         "saved": "Area di lavoro aggiornata",
         "ownerTitle": "Proprietario dell'area di lavoro",
         "ownerDescription": "Trasferisci la proprietà a un altro membro dell'area di lavoro.",

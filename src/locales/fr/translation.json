@@ -1719,6 +1719,7 @@
         "nameHint": "Le nom de l'espace peut contenir jusqu'à 65 caractères",
         "iconLabel": "Icône de l'espace",
         "iconHint": "Cette icône apparaît dans votre barre latérale et vos notifications.",
+        "roleLabel": "Votre rôle",
         "saved": "Espace mis à jour",
         "ownerTitle": "Propriétaire de l'espace",
         "ownerDescription": "Transférez la propriété à un autre membre de l'espace.",
@@ -2567,7 +2568,7 @@
       "selfHostedStreamingNote": "Nécessite un serveur qui prend en charge la transcription en streaming."
     },
     "llms": {
-      "title": "Modèles de langage",
+      "title": "Modèle de langage",
       "description": "Configurez les modèles pour le nettoyage, la mise en forme des notes et le chat",
       "tabs": {
         "dictationCleanup": "Nettoyage de la dictée",
