@@ -19,6 +19,7 @@ import {
   markCitedSources,
   parseChatQuery,
   type ChatCalendar,
+  type ChatFollowUp,
   type ChatNotesPeriod,
   type ChatPayload,
   type ChatQuery,
@@ -65,6 +66,8 @@ export interface ChatModelRequest {
 
 export interface ChatTurnDeps {
   getCandidateNotes: (terms: string[], options: ChatCandidateOptions) => ChatCandidateNotes;
+  /** The note as stored, deleted or not, or null when there is none. */
+  getNote: (noteId: number) => Note | null;
   isNotePrivate: (noteId: number) => boolean;
   /** The note's transcript, formatted for a model, or '' when it has none. */
   getNoteTranscript: (noteId: number) => string;
@@ -80,6 +83,10 @@ export const createDefaultChatTurnDeps = (): ChatTurnDeps => ({
   getCandidateNotes: (terms, options) => {
     const { notesRepository } = require('@/data') as typeof import('@/data');
     return notesRepository.getChatCandidateNotes(terms, options);
+  },
+  getNote: (noteId) => {
+    const { notesRepository } = require('@/data') as typeof import('@/data');
+    return notesRepository.getNoteById(noteId);
   },
   isNotePrivate: (noteId) => {
     const { notesRepository } = require('@/data') as typeof import('@/data');
@@ -218,7 +225,27 @@ interface FoundNotes {
   total: number;
   /** Null when the notes were searched for across every note. */
   period: ChatNotesPeriod | null;
+  /** Set when the notes are the ones the latest answer named, read again for a follow-up. */
+  followUp?: ChatFollowUp;
 }
+
+// A follow-up naming no topic or period of its own ("Is that really in the meeting?") is about
+// the notes the latest answer named, so they're read again, with the transcript lines the
+// question that found them matched. An answer that named none leaves nothing to carry.
+const findFollowUp = (history: ChatMessage[], now: Date): ChatFollowUp | null => {
+  const index = history.map((message) => message.role).lastIndexOf('assistant');
+  const answer = history[index];
+  if (!answer || answer.sourcesUnreadable) return null;
+  const noteIds = answer.sources
+    .filter((source) => source.cited !== false)
+    .map((source) => source.noteId);
+  if (noteIds.length === 0) return null;
+  const asked = history
+    .slice(0, index)
+    .reverse()
+    .find((message) => message.role === 'user');
+  return { noteIds, terms: asked ? parseChatQuery(asked.text, now).terms : [] };
+};
 
 // A period's notes are all read, the ones matching the question's words first, since the words
 // that ask about a period ("What did I work on today?") rarely name what is in it. "Recently" only
@@ -250,7 +277,8 @@ const findNotes = (
   };
 };
 
-const describeFound = ({ total, period }: FoundNotes): string => {
+const describeFound = ({ total, period, followUp }: FoundNotes): string => {
+  if (followUp) return `${total} ${total === 1 ? 'note' : 'notes'} from the last answer`;
   if (period) {
     const { scope } = period;
     if (total === 0) return `No ${scope.meetingsOnly ? 'meeting' : 'note'}s from ${scope.label}`;
@@ -349,11 +377,26 @@ export async function runChatTurn(
     }
     return picked;
   };
+  // A deleted note, or one from a team the user left, can't be read again.
+  const readAgain = (noteIds: number[]): Note[] =>
+    noteIds.flatMap((noteId) => {
+      const note = deps.getNote(noteId);
+      return note && !note.deletedAt && note.leftTeam !== 1 ? [note] : [];
+    });
   // Only notes whose words match, or that were made in the period the question names, are sent: a
   // question about something else gets no notes rather than unrelated ones.
-  const found = readNotes(() => {
+  const found = readNotes((): FoundNotes => {
+    const query = parseChatQuery(question, now);
+    const followUp = query.terms.length === 0 && !query.scope ? findFollowUp(history, now) : null;
+    const carried = followUp ? pick(readAgain(followUp.noteIds)) : [];
+    if (followUp && carried.length > 0) {
+      for (const note of carried) {
+        if (!transcripts.has(note.id)) transcripts.set(note.id, deps.getNoteTranscript(note.id));
+      }
+      return { notes: carried, total: carried.length, period: null, followUp };
+    }
     const result = findNotes(
-      parseChatQuery(question, now),
+      query,
       (terms, window) => {
         const candidates = deps.getCandidateNotes(terms, {
           includePrivate,
@@ -396,6 +439,7 @@ export async function runChatTurn(
       now,
       transcripts,
       period: found.period ?? undefined,
+      followUp: found.followUp,
       ...options,
     });
 

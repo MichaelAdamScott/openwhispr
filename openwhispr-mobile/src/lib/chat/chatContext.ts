@@ -62,7 +62,7 @@ export const CHAT_SYSTEM_PROMPT = `You are OpenWhispr's assistant. The user is a
 Rules:
 - Answer in concise markdown.
 - When the notes listed under NOTES answer the question, answer from them and name the notes you used by their exact titles. Don't name a note that doesn't answer the question.
-- Name by title only notes listed under NOTES. A follow-up can still be answered from RECENT CHAT, but don't name or cite the notes an earlier answer named.
+- Name by title only notes listed under NOTES. A follow-up can still be answered from RECENT CHAT, but don't name or cite a note an earlier answer named unless it is listed under NOTES.
 - When the notes don't cover the question, say so in one short sentence, then answer from general knowledge if you can.
 - Never invent attendees, dates, decisions, action items, or quotes.
 - Use the calendar section for questions about meetings and the user's schedule.
@@ -339,6 +339,10 @@ const CONVERSATIONAL_WORDS = new Set([
   // "What are the next steps?", "What's left to do?", "Who owes me something?". "let" is what
   // "let's" leaves.
   'recap',
+  'reference',
+  'references',
+  'referenced',
+  'referencing',
   'ask',
   'asked',
   'owe',
@@ -420,6 +424,14 @@ export interface ChatPayloadInput {
   transcripts?: ReadonlyMap<number, string>;
   /** Set when the notes were read from a period the question names. */
   period?: ChatNotesPeriod;
+  /** Set when the notes are the latest answer's, read again for a follow-up with no topic. */
+  followUp?: ChatFollowUp;
+}
+
+/** The notes the latest answer named, and the search terms of the question that found them. */
+export interface ChatFollowUp {
+  noteIds: number[];
+  terms: string[];
 }
 
 export interface ChatPayload {
@@ -757,7 +769,12 @@ const formatNoteDate = (note: Note, byCreation: boolean): string => {
 
 // The model is told when it got only some of a period's notes, so it doesn't answer for the whole
 // period from them.
-const formatNotesHeading = (sent: number, period: ChatNotesPeriod | undefined): string => {
+const formatNotesHeading = (
+  sent: number,
+  period: ChatNotesPeriod | undefined,
+  followUp: boolean,
+): string => {
+  if (followUp && sent > 0) return 'NOTES (the notes the latest answer in RECENT CHAT used):';
   if (!period || sent === 0) return 'NOTES:';
   let order = ', newest first';
   if (period.matched) order = sent === 1 ? ', matching the question' : ', matching ones first';
@@ -770,6 +787,7 @@ const formatNotesSection = (
   transcripts: ReadonlyMap<number, string> | undefined,
   terms: string[],
   period: ChatNotesPeriod | undefined,
+  followUp: boolean,
   emptyText: string,
 ): { section: string; sources: ChatSource[] } => {
   const blocks: string[] = [];
@@ -796,7 +814,7 @@ const formatNotesSection = (
     remaining -= included.length;
   }
 
-  const heading = formatNotesHeading(sources.length, period);
+  const heading = formatNotesHeading(sources.length, period, followUp);
   const listed = blocks.length > 0 ? fenced('notes', blocks.join('\n\n')) : emptyText;
   return { section: `${heading}\n${listed}`, sources };
 };
@@ -811,6 +829,7 @@ export const buildChatPayload = (input: ChatPayloadInput): ChatPayload => {
     noteCharBudget = CHAT_NOTE_CHAR_BUDGET,
     transcripts,
     period,
+    followUp,
   } = input;
   const today = now.toLocaleString('en-US', {
     weekday: 'long',
@@ -821,12 +840,14 @@ export const buildChatPayload = (input: ChatPayloadInput): ChatPayload => {
     minute: '2-digit',
   });
   const { terms, scope } = parseChatQuery(question, now);
+  // A follow-up's notes come with the lines the question that found them matched.
   const { section: notesSection, sources } = formatNotesSection(
     notes,
     noteCharBudget,
     transcripts,
-    terms,
+    followUp?.terms ?? terms,
     period,
+    followUp !== undefined,
     terms.length === 0 && !scope ? NO_TOPIC_NOTES : `No matching notes. ${NO_NOTES_SENT}`,
   );
 

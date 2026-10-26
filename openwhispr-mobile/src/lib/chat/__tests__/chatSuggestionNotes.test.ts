@@ -49,6 +49,7 @@ const setUp = (): { deps: ChatTurnDeps; ids: Record<string, number>; seed: Seed 
 
   const deps: ChatTurnDeps = {
     getCandidateNotes: (terms, options) => repo.getChatCandidateNotes(terms, options),
+    getNote: (noteId) => repo.getNoteById(noteId),
     isNotePrivate: () => false,
     getNoteTranscript: () => '',
     getConnectedCalendarAccounts: () => [],
@@ -333,6 +334,7 @@ describe('Chat questions through the real search', () => {
     const chat = jest.fn(async () => ({ text: 'The answer.', model: 'test' }));
     const deps: ChatTurnDeps = {
       getCandidateNotes: (terms, options) => repo.getChatCandidateNotes(terms, options),
+      getNote: (noteId) => repo.getNoteById(noteId),
       isNotePrivate: () => false,
       getNoteTranscript: (noteId) =>
         repo

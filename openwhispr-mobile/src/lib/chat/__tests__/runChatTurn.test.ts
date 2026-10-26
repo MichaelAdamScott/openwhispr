@@ -89,6 +89,9 @@ const candidatesFrom = (matched: Note[], recent: Note[] = []) =>
 
 const makeDeps = (overrides: Partial<ChatTurnDeps> = {}): ChatTurnDeps => ({
   getCandidateNotes: candidatesFrom([PRICING, ROADMAP]),
+  getNote: jest.fn(
+    (noteId: number) => [PRICING, ROADMAP].find((note) => note.id === noteId) ?? null,
+  ),
   getConnectedCalendarAccounts: jest.fn(() => [CONNECTED_ACCOUNT]),
   getCalendarEvents: jest.fn(() => []),
   isNotePrivate: jest.fn(() => false),
@@ -318,6 +321,102 @@ describe('runChatTurn', () => {
     expect(steps.find((step) => step.id === 'search')?.detail).toBe('No matching notes');
     expect(result.sources).toEqual([]);
     expect(sentText(deps.chat)).toContain('NOTES:\nNo matching notes.');
+  });
+
+  describe('a follow-up naming no topic of its own', () => {
+    const MEETING = makeNote({
+      id: 3,
+      title: 'Personal Workspace and Sharing Design',
+      enhancedContent: '## Summary\n- Sharing moves to spaces.',
+    });
+    const TRANSCRIPT = [
+      '[00:00] Dana: Spaces replace shared folders.',
+      '[00:10] Sam: What is the weather like in Tokyo today?',
+      '[00:12] Sam: Tokyo is currently around 72.5 degrees.',
+    ].join('\n');
+    const askedAbout = (sources: ChatMessage['sources']): ChatMessage[] => [
+      makeMessage('m1', 'user', 'What is the weather in Tokyo?'),
+      makeMessage(
+        'm2',
+        'assistant',
+        'Based on Personal Workspace and Sharing Design, 72.5°F.',
+        sources,
+      ),
+    ];
+    const followUpDeps = (overrides: Partial<ChatTurnDeps> = {}): ChatTurnDeps =>
+      makeDeps({
+        getNote: jest.fn((noteId: number) => (noteId === MEETING.id ? MEETING : null)),
+        getNoteTranscript: jest.fn(() => TRANSCRIPT),
+        ...overrides,
+      });
+
+    it('reads again the notes the latest answer named, with the lines that found them', async () => {
+      const input = makeInput({
+        question: 'There is no reference of that in that meeting?',
+        history: askedAbout([{ noteId: 3, title: MEETING.title, cited: true }]),
+      });
+      const deps = followUpDeps();
+
+      const result = await runChatTurn(input, deps);
+
+      expect(deps.getCandidateNotes).not.toHaveBeenCalled();
+      const sent = sentText(deps.chat);
+      expect(sent).toContain('NOTES (the notes the latest answer in RECENT CHAT used):');
+      expect(sent).toContain('[00:12] Sam: Tokyo is currently around 72.5 degrees.');
+      expect(sent).not.toContain('Spaces replace shared folders.');
+      expect(lastSteps(input.onSteps).find((step) => step.id === 'search')?.detail).toBe(
+        '1 note from the last answer',
+      );
+      expect(result.sources.map((source) => source.noteId)).toEqual([3]);
+    });
+
+    it('reads nothing again when the latest answer named no note', async () => {
+      const input = makeInput({
+        question: 'Why is that?',
+        history: askedAbout([{ noteId: 3, title: MEETING.title, cited: false }]),
+      });
+      const deps = followUpDeps();
+
+      const result = await runChatTurn(input, deps);
+
+      expect(deps.getNote).not.toHaveBeenCalled();
+      expect(result.sources).toEqual([]);
+    });
+
+    it('reads no deleted note again, nor a private one off this phone', async () => {
+      const cited = askedAbout([{ noteId: 3, title: MEETING.title, cited: true }]);
+      const deleted = followUpDeps({
+        getNote: jest.fn(() => ({ ...MEETING, deletedAt: '2026-10-21 10:00:00' })),
+      });
+      const privateNote = followUpDeps({
+        getNote: jest.fn(() => ({ ...MEETING, isPrivate: 1 })),
+        isNotePrivate: jest.fn(() => false),
+      });
+
+      for (const deps of [deleted, privateNote]) {
+        const result = await runChatTurn(
+          makeInput({ question: 'Is that in there?', history: cited }),
+          deps,
+        );
+        expect(result.sources).toEqual([]);
+        expect(sentText(deps.chat)).not.toContain('Tokyo is currently');
+      }
+    });
+
+    it('searches as usual when the follow-up names a topic', async () => {
+      const deps = followUpDeps();
+
+      await runChatTurn(
+        makeInput({
+          question: 'What about pricing?',
+          history: askedAbout([{ noteId: 3, title: MEETING.title, cited: true }]),
+        }),
+        deps,
+      );
+
+      expect(deps.getCandidateNotes).toHaveBeenCalled();
+      expect(deps.getNote).not.toHaveBeenCalled();
+    });
   });
 
   it('reads the notes from a period the question names, whatever their words', async () => {
