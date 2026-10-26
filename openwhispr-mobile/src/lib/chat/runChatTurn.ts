@@ -83,9 +83,10 @@ export const createDefaultChatTurnDeps = (): ChatTurnDeps => ({
   },
   isNotePrivate: (noteId) => {
     const { notesRepository } = require('@/data') as typeof import('@/data');
-    // A note that can't be found may have been private when it was deleted, so it counts as private.
+    // Missing, deleted and revoked notes are no longer eligible to supply cloud context,
+    // including excerpts retained in earlier answers.
     const note = notesRepository.getNoteById(noteId);
-    return note == null || note.isPrivate === 1;
+    return note == null || note.isPrivate === 1 || !!note.deletedAt || note.leftTeam === 1;
   },
   getNoteTranscript: (noteId) => {
     const { notesRepository } = require('@/data') as typeof import('@/data');
@@ -239,11 +240,25 @@ const findFollowUp = (history: ChatMessage[], now: Date): ChatFollowUp | null =>
     .filter((source) => source.cited !== false)
     .map((source) => source.noteId);
   if (noteIds.length === 0) return null;
-  const asked = history
-    .slice(0, index)
-    .reverse()
-    .find((message) => message.role === 'user');
-  return { noteIds, terms: asked ? parseChatQuery(asked.text, now).terms : [] };
+  // Topic-free follow-ups inherit the question that found these notes. Stop at a new period
+  // or a break in the citations, so an unrelated earlier topic cannot supply their passages.
+  for (let questionIndex = index - 1; questionIndex >= 0; questionIndex -= 2) {
+    const asked = history[questionIndex];
+    if (asked.role !== 'user') break;
+    const query = parseChatQuery(asked.text, now);
+    if (query.terms.length > 0 || query.scope) return { noteIds, terms: query.terms };
+    const previous = history[questionIndex - 1];
+    if (
+      previous?.role !== 'assistant' ||
+      previous.sourcesUnreadable ||
+      !noteIds.every((noteId) =>
+        previous.sources.some((source) => source.noteId === noteId && source.cited !== false),
+      )
+    ) {
+      break;
+    }
+  }
+  return { noteIds, terms: [] };
 };
 
 // A period's notes are all read, the ones matching the question's words first, since the words

@@ -637,6 +637,114 @@ describe('runChatTurn', () => {
       expect(result.sources.map((source) => source.noteId)).toEqual([3]);
     });
 
+    it('keeps the originating transcript passages through successive follow-ups', async () => {
+      const history = askedAbout([
+        { noteId: 3, title: MEETING.title, cited: true },
+        { noteId: 4, title: 'Another meeting', cited: true },
+      ]);
+      const deps = followUpDeps({
+        chat: jest.fn(async () => ({
+          text: 'Personal Workspace and Sharing Design says 72.5 degrees.',
+          model: 'test',
+        })),
+      });
+      const firstQuestion = 'Is that really in the meeting?';
+      const first = await runChatTurn(makeInput({ question: firstQuestion, history }), deps);
+      expect(sentText(deps.chat)).toContain('[00:12] Sam: Tokyo is currently around 72.5 degrees.');
+      expect(first.sources).toEqual([{ noteId: 3, title: MEETING.title, cited: true }]);
+
+      await runChatTurn(
+        makeInput({
+          question: 'Who said that?',
+          history: [
+            ...history,
+            makeMessage('m3', 'user', firstQuestion),
+            makeMessage('m4', 'assistant', first.text, first.sources),
+          ],
+        }),
+        deps,
+      );
+
+      expect(sentText(deps.chat, 1)).toContain(
+        '[00:12] Sam: Tokyo is currently around 72.5 degrees.',
+      );
+    });
+
+    it.each(['Summarize my meetings this week', 'What did I decide recently?'])(
+      'does not borrow an earlier topic after a broad recap: %s',
+      async (question) => {
+        const sources = [{ noteId: 3, title: MEETING.title, cited: true }];
+        const deps = followUpDeps();
+        await runChatTurn(
+          makeInput({
+            question: 'Tell me more',
+            history: [
+              ...askedAbout(sources),
+              makeMessage('m3', 'user', question),
+              makeMessage('m4', 'assistant', 'Sharing moves to spaces.', sources),
+            ],
+          }),
+          deps,
+        );
+
+        const notes = sentText(deps.chat).split('RECENT CHAT:')[0];
+        expect(notes).toContain('Sharing moves to spaces.');
+        expect(notes).not.toContain('Tokyo is currently');
+      },
+    );
+
+    it('uses a newer topic instead of the original topic on the same cited note', async () => {
+      const sources = [{ noteId: 3, title: MEETING.title, cited: true }];
+      const deps = followUpDeps();
+      await runChatTurn(
+        makeInput({
+          question: 'Tell me more',
+          history: [
+            ...askedAbout(sources),
+            makeMessage('m3', 'user', 'What did Dana say?'),
+            makeMessage('m4', 'assistant', 'Spaces replace shared folders.', sources),
+          ],
+        }),
+        deps,
+      );
+
+      const notes = sentText(deps.chat).split('RECENT CHAT:')[0];
+      expect(notes).toContain('[00:00] Dana: Spaces replace shared folders.');
+      expect(notes).not.toContain('Tokyo is currently');
+    });
+
+    it.each(['different note', 'uncited note', 'unreadable sources'])(
+      'does not trace an originating topic through %s',
+      async (boundary) => {
+        const earlier = askedAbout([
+          {
+            noteId: boundary === 'different note' ? 4 : 3,
+            title: MEETING.title,
+            cited: boundary !== 'uncited note',
+          },
+        ]);
+        if (boundary === 'unreadable sources') earlier[1].sourcesUnreadable = true;
+        const deps = followUpDeps({ getChatSelection: LOCAL_SELECTION });
+        await runChatTurn(
+          makeInput({
+            question: 'Who said that?',
+            history: [
+              ...earlier,
+              makeMessage('m3', 'user', 'Tell me more'),
+              makeMessage('m4', 'assistant', 'Sharing moves to spaces.', [
+                { noteId: 3, title: MEETING.title, cited: true },
+              ]),
+            ],
+          }),
+          deps,
+        );
+
+        const notes = sentText(deps.chat).split('RECENT CHAT:')[0];
+        expect(notes).toContain('Sharing moves to spaces.');
+        expect(notes).not.toContain('Tokyo is currently');
+      },
+    );
+
     it('reads nothing again when the latest answer named no note', async () => {
       const input = makeInput({
         question: 'Why is that?',
@@ -991,6 +1099,21 @@ describe('runChatTurn', () => {
 
     expect(mockGetNoteById).toHaveBeenCalledWith(7);
     expect(sentText(deps.chat)).toContain('RECENT CHAT:\nNo prior chat messages.');
+  });
+
+  it.each([
+    ['soft-deleted', { deletedAt: '2026-10-21 10:00:00' }],
+    ['left-team', { leftTeam: 1 }],
+  ] as const)('omits cloud history whose source is %s', async (_state, fields) => {
+    mockGetNoteById.mockImplementation((noteId: number) =>
+      makeNote({ id: noteId, ...(noteId === 7 ? fields : {}) }),
+    );
+    const deps = makeDeps({ isNotePrivate: createDefaultChatTurnDeps().isNotePrivate });
+
+    await runChatTurn(makeInput({ history: PRIVATE_HISTORY }), deps);
+
+    expect(sentText(deps.chat)).toContain('RECENT CHAT:\nNo prior chat messages.');
+    expect(sentText(deps.chat)).not.toContain('Launch is June 3.');
   });
 
   it('keeps history whose source notes are all present and shared', async () => {

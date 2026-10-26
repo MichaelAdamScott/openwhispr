@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useAudioRecording, type UseAudioRecordingOptions } from '../useAudioRecording';
 import { transcribeAndCleanup } from '@/lib/transcribeAndCleanup';
 import { analyzeSpeechActivity } from '@/lib/speechActivity';
-import { deleteManagedTranscriptAudio } from '@/lib/transcriptAudio';
+import { deleteManagedTranscriptAudio, retainTranscriptAudio } from '@/lib/transcriptAudio';
 import { isLocalModelMissingError } from '@/services/transcription/TranscriptionService';
 import { isUsageLimitError } from '@/lib/usageLimitError';
 
@@ -481,4 +481,37 @@ describe('cancelRecording', () => {
     expect(onComplete).toHaveBeenCalledWith('Kept.');
     expect(hook.result.current.isProcessing).toBe(false);
   });
+});
+
+it('deletes the original ephemeral capture when retention fails', async () => {
+  jest.mocked(retainTranscriptAudio).mockRejectedValueOnce(new Error('ENOSPC: copy failed'));
+  const onError = jest.fn();
+  const { stopError } = await recordAndStop({ saveToHistory: false, onError });
+
+  expect(stopError).toEqual(expect.objectContaining({ message: 'ENOSPC: copy failed' }));
+  expect(onError).toHaveBeenCalledWith(stopError);
+  expect(mockTranscribe).not.toHaveBeenCalled();
+  expect(mockAddTranscript).not.toHaveBeenCalled();
+  expect(mockAddFailedTranscript).not.toHaveBeenCalled();
+  expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///tmp/rec.wav', { idempotent: true });
+});
+
+it('preserves a history capture when retention fails', async () => {
+  jest.mocked(retainTranscriptAudio).mockRejectedValueOnce(new Error('ENOSPC: copy failed'));
+
+  await recordAndStop({});
+
+  expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+});
+
+it('reports the retention error even when deleting its ephemeral capture fails', async () => {
+  jest.mocked(retainTranscriptAudio).mockRejectedValueOnce(new Error('ENOSPC: copy failed'));
+  jest.mocked(FileSystem.deleteAsync).mockRejectedValueOnce(new Error('Delete failed'));
+  const onError = jest.fn();
+
+  const { stopError } = await recordAndStop({ saveToHistory: false, onError });
+
+  expect(stopError).toEqual(expect.objectContaining({ message: 'ENOSPC: copy failed' }));
+  expect(onError).toHaveBeenCalledWith(stopError);
+  expect(FileSystem.deleteAsync).toHaveBeenCalled();
 });

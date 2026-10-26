@@ -106,6 +106,7 @@ export function useChatVoiceInput({
   // dropped unseen.
   const questionGenerationRef = useRef(0);
   const slotRef = useRef<TranscribingSlot | null>(null);
+  const fallbackSlotRef = useRef<TranscribingSlot | null>(null);
   // The file a question is being spoken into, until it is cancelled or handed off to be
   // transcribed. A screen that unmounts mid-question releases the recorder before its own cleanup
   // can cancel it, and a released recorder can't be asked for its file, so it is kept here.
@@ -139,6 +140,7 @@ export function useChatVoiceInput({
   // release for a delete or sign-out.
   const releaseSlot = (): void => {
     const owned = ownsSlot();
+    fallbackSlotRef.current = null;
     slotRef.current = null;
     if (owned) useChatStore.getState().endTranscribing();
     setIsTranscribing(false);
@@ -168,7 +170,10 @@ export function useChatVoiceInput({
     [],
   );
 
-  const isStopped = (): boolean => questionGenerationRef.current !== generationRef.current;
+  // Unmounted screens no longer subscribe, but their in-flight work still checks ownership.
+  const isStopped = (): boolean =>
+    questionGenerationRef.current !== generationRef.current ||
+    (slotRef.current !== null && !ownsSlot());
 
   const sendTranscript = (text: string): void => {
     if (!ownsSlot()) {
@@ -223,19 +228,25 @@ export function useChatVoiceInput({
       }
       Alert.alert('Couldn’t hear that', error.message);
     },
-    // The slot is released while the prompt is up (finish releases it) and taken again only if
-    // the user picks the cloud; any other answer drops the question and its recording.
+    // Keep the same slot through consent: a late approval cannot revive a cancelled question.
     onLocalModelMissing: (retryWithCloud, discard) => {
+      const slot = slotRef.current;
       const drop = (): void => {
+        if (slotRef.current === slot) releaseSlot();
         discard().catch(() => undefined);
       };
-      if (isStopped()) {
+      if (isStopped() || !ownsSlot()) {
         drop();
         return;
       }
+      fallbackSlotRef.current = slot;
       promptLocalModelFallback(() => {
-        if (takeSlot()) retryWithCloud();
-        else drop();
+        if (slotRef.current !== slot || isStopped() || !ownsSlot()) {
+          drop();
+          return;
+        }
+        fallbackSlotRef.current = null;
+        retryWithCloud();
       }, drop);
     },
     onUsageLimitReached: async (
@@ -330,8 +341,8 @@ export function useChatVoiceInput({
     } catch {
       // Failures already reached onError.
     } finally {
-      // Covers every exit that sent nothing; a slot taken since (a cloud retry) isn't ours to end.
-      if (slotRef.current === slot) releaseSlot();
+      // A fallback dialog keeps this question's slot until it is declined or its retry finishes.
+      if (slotRef.current === slot && fallbackSlotRef.current !== slot) releaseSlot();
     }
   };
 

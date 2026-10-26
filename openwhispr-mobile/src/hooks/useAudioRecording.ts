@@ -189,6 +189,7 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
   };
 
   const stopRecording = async () => {
+    let sourceUriToDiscard: string | null = null;
     try {
       const { audioRecorder: recorder } = ensureAudioSupport();
 
@@ -205,6 +206,7 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
       }
 
       const uri = recorder.uri;
+      if (!saveToHistory) sourceUriToDiscard = uri ?? null;
 
       setIsRecording(false);
       setIsProcessing(true);
@@ -233,14 +235,12 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
 
       const speechAnalysis = await analyzeSpeechActivity(uri, 'recording');
       if (speechAnalysis?.noSpeechLikely) {
-        if (!saveToHistory) {
-          await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => undefined);
-        }
         throw createNoSpeechError();
       }
       const clientTranscriptionId = `recording-${randomUUID()}`;
 
       const retained = await retainRecording(uri);
+      sourceUriToDiscard = null;
       const transcriptionProvider = jobRouteRef.current.provider;
       try {
         await finalizeRecording(retained, transcriptionProvider, clientTranscriptionId);
@@ -297,6 +297,13 @@ export function useAudioRecording(options: UseAudioRecordingOptions = {}) {
       options.onError?.(error as Error);
       throw error;
     } finally {
+      // Retention normally removes the source. An ephemeral question must also lose it when
+      // validation or copying fails before managed audio can take ownership.
+      if (sourceUriToDiscard) {
+        await FileSystem.deleteAsync(sourceUriToDiscard, { idempotent: true }).catch(
+          () => undefined,
+        );
+      }
       setIsProcessing(false);
     }
   };

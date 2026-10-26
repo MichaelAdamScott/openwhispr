@@ -519,11 +519,7 @@ it('shows no error for a stopped question', async () => {
 });
 
 it('stops showing a cloud retry whose entry was cleared under it', async () => {
-  const { result, rerender } = renderVoiceInput('conv-1');
-  mockRecordingOptions.onLocalModelMissing?.(
-    jest.fn(),
-    jest.fn(async () => undefined),
-  );
+  const { result, rerender } = await finishWithLocalFallback();
   const [onUseCloud] = jest.mocked(promptLocalModelFallback).mock.calls[0];
   act(() => onUseCloud());
   rerender({});
@@ -684,15 +680,15 @@ it('a second finish while stopping does nothing', async () => {
   expect(mockCancelRecording).not.toHaveBeenCalled();
 });
 
-it('discards the recording when the local-model fallback is declined', () => {
-  renderVoiceInput('conv-1');
-  const discard = jest.fn(async () => undefined);
-  mockRecordingOptions.onLocalModelMissing?.(jest.fn(), discard);
+it('discards the recording and releases the slot when the local-model fallback is declined', async () => {
+  const { discard } = await finishWithLocalFallback();
+  expect(useChatStore.getState().pending?.phase).toBe('transcribing');
 
   const [, onDecline] = jest.mocked(promptLocalModelFallback).mock.calls[0];
-  onDecline?.();
+  act(() => onDecline?.());
 
   expect(discard).toHaveBeenCalled();
+  expect(useChatStore.getState().pending).toBeNull();
 });
 
 it('refreshes usage after a cloud transcription', () => {
@@ -763,4 +759,134 @@ it('ticks elapsed seconds while listening', async () => {
   } finally {
     jest.useRealTimers();
   }
+});
+
+async function finishWithLocalFallback(): Promise<
+  ReturnType<typeof renderVoiceInput> & { retry: jest.Mock; discard: jest.Mock }
+> {
+  const retry = jest.fn();
+  const discard = jest.fn(async () => undefined);
+  mockStopBehavior = async () => {
+    mockRecordingOptions.onLocalModelMissing?.(retry, discard);
+  };
+  const hook = renderVoiceInput('conv-1');
+  await act(async () => {
+    await hook.result.current.start(false);
+  });
+  hook.rerender({});
+  await act(async () => {
+    await hook.result.current.finish();
+  });
+  return { ...hook, retry, discard };
+}
+
+it('drops a late fallback after unmount and sign-out', async () => {
+  const transcription = deferred();
+  const discard = jest.fn(async () => undefined);
+  mockStopBehavior = async () => {
+    await transcription.promise;
+    mockRecordingOptions.onLocalModelMissing?.(jest.fn(), discard);
+  };
+  const { result, rerender, unmount } = renderVoiceInput('conv-1');
+  await act(async () => {
+    await result.current.start(false);
+  });
+  rerender({});
+  let finishing: Promise<void> = Promise.resolve();
+  await act(async () => {
+    finishing = result.current.finish();
+  });
+  unmount();
+  act(() => useChatStore.getState().reset());
+  expect(mockRecordingOptions.shouldCancel?.()).toBe(true);
+  await act(async () => {
+    transcription.resolve();
+    await finishing;
+  });
+
+  expect(promptLocalModelFallback).not.toHaveBeenCalled();
+  expect(discard).toHaveBeenCalled();
+});
+
+it('still sends a valid question after its screen unmounts', async () => {
+  const transcription = deferred();
+  mockStopBehavior = async () => {
+    await transcription.promise;
+    mockRecordingOptions.onComplete?.('Still wanted');
+  };
+  const { result, rerender, unmount } = renderVoiceInput('conv-1');
+  await act(async () => {
+    await result.current.start(false);
+  });
+  rerender({});
+  let finishing: Promise<void> = Promise.resolve();
+  await act(async () => {
+    finishing = result.current.finish();
+  });
+  unmount();
+  expect(mockRecordingOptions.shouldCancel?.()).toBe(false);
+  await act(async () => {
+    transcription.resolve();
+    await finishing;
+  });
+
+  expect(mockSend).toHaveBeenCalledWith('Still wanted', {
+    conversationId: 'conv-1',
+    allowCloudFallback: false,
+  });
+});
+
+it('keeps the fallback slot until an approved cloud retry finishes', async () => {
+  const { retry, discard } = await finishWithLocalFallback();
+  const pending = useChatStore.getState().pending;
+  expect(pending?.phase).toBe('transcribing');
+  const [onUseCloud] = jest.mocked(promptLocalModelFallback).mock.calls[0];
+  act(() => onUseCloud());
+
+  expect(retry).toHaveBeenCalledTimes(1);
+  expect(useChatStore.getState().pending).toBe(pending);
+  act(() => mockRecordingOptions.onComplete?.('Retried question'));
+  expect(mockSend).toHaveBeenCalledWith('Retried question', {
+    conversationId: 'conv-1',
+    allowCloudFallback: false,
+  });
+  expect(useChatStore.getState().pending).toBeNull();
+  expect(discard).not.toHaveBeenCalled();
+});
+
+it('never reacquires a fallback slot cleared after unmount', async () => {
+  const { retry, discard, unmount } = await finishWithLocalFallback();
+  const [onUseCloud] = jest.mocked(promptLocalModelFallback).mock.calls[0];
+  unmount();
+  act(() => useChatStore.getState().reset());
+  act(() => onUseCloud());
+
+  expect(retry).not.toHaveBeenCalled();
+  expect(discard).toHaveBeenCalled();
+  expect(useChatStore.getState().pending).toBeNull();
+});
+
+it('lets a new question proceed after a cancelled fallback without reviving the old one', async () => {
+  const { result, rerender, retry, discard } = await finishWithLocalFallback();
+  const [onUseCloud] = jest.mocked(promptLocalModelFallback).mock.calls[0];
+  act(() => useChatStore.getState().cancel());
+  await act(async () => {
+    expect(await result.current.start(false)).toBe(true);
+  });
+  rerender({});
+  act(() => onUseCloud());
+
+  expect(retry).not.toHaveBeenCalled();
+  expect(discard).toHaveBeenCalled();
+  expect(mockRecordingOptions.shouldCancel?.()).toBe(false);
+  mockStopBehavior = async () => {
+    mockRecordingOptions.onComplete?.('New question');
+  };
+  await act(async () => {
+    await result.current.finish();
+  });
+  expect(mockSend).toHaveBeenCalledWith('New question', {
+    conversationId: 'conv-1',
+    allowCloudFallback: false,
+  });
 });
