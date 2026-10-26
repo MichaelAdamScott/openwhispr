@@ -1,9 +1,18 @@
 const memory = new Map<string, string>();
 let mockUser: { id: string; isAnonymous?: boolean } | null = { id: 'a' };
+let mockSessionCookie: string | null = 'synthetic-session-a';
+const mockAuthListeners = new Set<() => void>();
+const mockConfigListeners = new Set<() => void>();
 let mockSaveError: string | null = null;
 let mockConfig = { androidHistoryDays: 30, insightsSyncEnabled: false };
 jest.mock('@/store/useAuthStore', () => ({
-  useAuthStore: { getState: () => ({ user: mockUser }) },
+  useAuthStore: {
+    getState: () => ({ user: mockUser, sessionCookie: mockSessionCookie }),
+    subscribe: (listener: () => void) => {
+      mockAuthListeners.add(listener);
+      return () => mockAuthListeners.delete(listener);
+    },
+  },
 }));
 jest.mock('@/store/useConfigStore', () => ({
   useConfigStore: {
@@ -11,9 +20,16 @@ jest.mock('@/store/useConfigStore', () => ({
       config: mockConfig,
       error: mockSaveError,
       updateConfig: async (change: object) => {
-        if (!mockSaveError) Object.assign(mockConfig, change);
+        if (!mockSaveError) {
+          Object.assign(mockConfig, change);
+          [...mockConfigListeners].forEach((listener) => listener());
+        }
       },
     }),
+    subscribe: (listener: () => void) => {
+      mockConfigListeners.add(listener);
+      return () => mockConfigListeners.delete(listener);
+    },
   },
 }));
 jest.mock('@/lib/apiClient', () => ({
@@ -55,6 +71,7 @@ beforeEach(async () => {
   mockSaveError = null;
   jest.clearAllMocks();
   mockUser = { id: 'a' };
+  mockSessionCookie = 'synthetic-session-a';
   mockConfig = { androidHistoryDays: 30, insightsSyncEnabled: false };
   Object.defineProperty(global, 'localStorage', {
     configurable: true,
@@ -93,7 +110,7 @@ it('uploads content-free events only after explicit consent and never adds local
   expect(api.post).toHaveBeenCalledWith(
     '/api/analytics/events/batch',
     { events: [event] },
-    { headers: { 'x-openwhispr-source': 'mobile' } },
+    expect.objectContaining({ headers: { 'x-openwhispr-source': 'mobile' } }),
   );
   expect(useInsights.getState().ledger.summary?.totalWords).toBe(10);
 });
@@ -326,4 +343,220 @@ it('allows opt-out while the opt-in sync request is still pending', async () => 
   await pending;
   await Promise.resolve();
   expect(useInsights.getState().ledger.summary).toBeUndefined();
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+function changeAccount(id: string, sessionCookie = `synthetic-session-${id}`) {
+  mockUser = { id };
+  mockSessionCookie = sessionCookie;
+  [...mockAuthListeners].forEach((listener) => listener());
+}
+
+it('aborts a pending statistics upload immediately even if persisting opt-out fails', async () => {
+  recordInsight(insightsScope(), event);
+  mockConfig.insightsSyncEnabled = true;
+  const response = deferred<{ accepted: string[]; rejected: string[] }>();
+  jest.mocked(api.post).mockReturnValueOnce(response.promise);
+  const pending = refreshInsights();
+  const signal = jest.mocked(api.post).mock.calls[0][2]?.signal;
+  const originalSetItem = localStorage.setItem;
+  localStorage.setItem = () => {
+    throw new Error('storage unavailable');
+  };
+  try {
+    const optOut = setInsightsSyncConsent(false);
+    await expect(optOut).rejects.toThrow('storage unavailable');
+    expect(signal?.aborted).toBe(true);
+    expect(useInsights.getState().status).toBe('idle');
+  } finally {
+    localStorage.setItem = originalSetItem;
+    response.resolve({ accepted: ['one'], rejected: [] });
+    await pending;
+  }
+  expect(useInsights.getState().ledger.events).toEqual([event]);
+  expect(useInsights.getState().ledger.acknowledged).toEqual([]);
+  expect(api.get).not.toHaveBeenCalled();
+});
+
+it('starts a fresh run after OFF then ON and ignores the old acknowledgement', async () => {
+  recordInsight(insightsScope(), event);
+  mockConfig.insightsSyncEnabled = true;
+  const oldResponse = deferred<{ accepted: string[]; rejected: string[] }>();
+  const newResponse = deferred<{ accepted: string[]; rejected: string[] }>();
+  jest
+    .mocked(api.post)
+    .mockReturnValueOnce(oldResponse.promise)
+    .mockReturnValueOnce(newResponse.promise);
+  const oldRun = refreshInsights();
+  let newRun: Promise<void> | undefined;
+  try {
+    await setInsightsSyncConsent(false);
+    await setInsightsSyncConsent(true);
+    newRun = refreshInsights();
+    expect(api.post).toHaveBeenCalledTimes(2);
+    oldResponse.resolve({ accepted: ['one'], rejected: [] });
+    await oldRun;
+    expect(useInsights.getState().ledger.acknowledged).toEqual([]);
+    expect(useInsights.getState().status).toBe('loading');
+    expect(refreshInsights()).toBe(newRun);
+  } finally {
+    oldResponse.resolve({ accepted: ['one'], rejected: [] });
+    newResponse.resolve({ accepted: ['one'], rejected: [] });
+    await Promise.all([oldRun, newRun]);
+  }
+  expect(useInsights.getState().ledger.events).toEqual([event]);
+  expect(useInsights.getState().ledger.acknowledged).toEqual(['one']);
+});
+
+it('invalidates an A to B to A round trip even when the old transport ignores abort', async () => {
+  recordInsight(insightsScope(), event);
+  mockConfig.insightsSyncEnabled = true;
+  const oldResponse = deferred<{ accepted: string[]; rejected: string[] }>();
+  const newResponse = deferred<{ accepted: string[]; rejected: string[] }>();
+  jest
+    .mocked(api.post)
+    .mockReturnValueOnce(oldResponse.promise)
+    .mockReturnValueOnce(newResponse.promise);
+  const oldRun = refreshInsights();
+  const oldSignal = jest.mocked(api.post).mock.calls[0][2]?.signal;
+  let newRun: Promise<void> | undefined;
+  try {
+    changeAccount('b');
+    changeAccount('a');
+    newRun = refreshInsights();
+    expect(oldSignal?.aborted).toBe(true);
+    expect(api.post).toHaveBeenCalledTimes(2);
+    oldResponse.resolve({ accepted: ['one'], rejected: [] });
+    await oldRun;
+    expect(useInsights.getState().ledger.acknowledged).toEqual([]);
+    expect(useInsights.getState().status).toBe('loading');
+    expect(refreshInsights()).toBe(newRun);
+  } finally {
+    oldResponse.resolve({ accepted: ['one'], rejected: [] });
+    newResponse.resolve({ accepted: ['one'], rejected: [] });
+    await Promise.all([oldRun, newRun]);
+  }
+  expect(useInsights.getState().scope).toBe('account:a');
+  expect(useInsights.getState().ledger.events).toEqual([event]);
+  expect(JSON.parse(memory.get('android-insights-v1:account:a')!).acknowledged).toEqual(['one']);
+});
+
+it('cancels a pending summary when history is disabled without waiting for the screen to refresh', async () => {
+  mockConfig.insightsSyncEnabled = true;
+  const response = deferred<{ totalWords: number; totalDictations: number }>();
+  jest.mocked(api.get).mockReturnValueOnce(response.promise);
+  const pending = refreshInsights();
+  const signal = jest.mocked(api.get).mock.calls[0][1]?.signal;
+  try {
+    mockConfig.androidHistoryDays = 0;
+    [...mockConfigListeners].forEach((listener) => listener());
+    expect(signal?.aborted).toBe(true);
+    expect(useInsights.getState().status).toBe('idle');
+  } finally {
+    response.resolve({ totalWords: 100, totalDictations: 5 });
+    await pending;
+  }
+  expect(useInsights.getState().ledger.summary).toBeUndefined();
+});
+
+it('replaces a same-account session without letting its late error overwrite the new run', async () => {
+  mockConfig.insightsSyncEnabled = true;
+  const oldResponse = deferred<{ totalWords: number; totalDictations: number }>();
+  const newResponse = deferred<{ totalWords: number; totalDictations: number }>();
+  jest
+    .mocked(api.get)
+    .mockReturnValueOnce(oldResponse.promise)
+    .mockReturnValueOnce(newResponse.promise);
+  const oldRun = refreshInsights();
+  const oldSignal = jest.mocked(api.get).mock.calls[0][1]?.signal;
+  let newRun: Promise<void> | undefined;
+  try {
+    changeAccount('a', 'synthetic-replacement-session-a');
+    newRun = refreshInsights();
+    expect(oldSignal?.aborted).toBe(true);
+    expect(api.get).toHaveBeenCalledTimes(2);
+    oldResponse.reject(new ApiError('old policy response', 403, 'POLICY_CLOUD_BACKUP_BLOCKED'));
+    await oldRun;
+    expect(useInsights.getState().status).toBe('loading');
+    expect(refreshInsights()).toBe(newRun);
+  } finally {
+    oldResponse.resolve({ totalWords: 999, totalDictations: 999 });
+    newResponse.resolve({ totalWords: 20, totalDictations: 4 });
+    await Promise.all([oldRun, newRun]);
+  }
+  expect(useInsights.getState().ledger.summary).toEqual({ totalWords: 20, totalDictations: 4 });
+  expect(mockAuthListeners.size).toBe(0);
+  expect(mockConfigListeners.size).toBe(0);
+});
+
+it('aborts a deleted account upload and never recreates its erased ledger', async () => {
+  recordInsight(insightsScope(), event);
+  mockConfig.insightsSyncEnabled = true;
+  const response = deferred<{ accepted: string[]; rejected: string[] }>();
+  jest.mocked(api.post).mockReturnValueOnce(response.promise);
+  const pending = refreshInsights();
+  const signal = jest.mocked(api.post).mock.calls[0][2]?.signal;
+  try {
+    eraseAccountInsights('a');
+    expect(signal?.aborted).toBe(true);
+    expect(mockAuthListeners.size).toBe(0);
+    expect(mockConfigListeners.size).toBe(0);
+  } finally {
+    response.resolve({ accepted: ['one'], rejected: [] });
+    await pending;
+  }
+  expect(memory.has('android-insights-v1:account:a')).toBe(false);
+  expect(memory.get('android-insights-v1:account:a:deleted')).toBe('true');
+  expect(useInsights.getState().ledger.events).toEqual([]);
+  expect(api.get).not.toHaveBeenCalled();
+});
+
+it('retains acknowledged progress but stops further batches until a fresh opt-in', async () => {
+  const events = Array.from({ length: 401 }, (_, index) => ({ ...event, event_id: String(index) }));
+  events.forEach((item) => recordInsight(insightsScope(), item));
+  mockConfig.insightsSyncEnabled = true;
+  const secondResponse = deferred<{ accepted: string[]; rejected: string[] }>();
+  jest
+    .mocked(api.post)
+    .mockResolvedValueOnce({
+      accepted: events.slice(0, 200).map((item) => item.event_id),
+      rejected: [],
+    })
+    .mockReturnValueOnce(secondResponse.promise);
+  const pending = refreshInsights();
+  await Promise.resolve();
+  const signal = jest.mocked(api.post).mock.calls[1]?.[2]?.signal;
+  try {
+    expect(api.post).toHaveBeenCalledTimes(2);
+    await setInsightsSyncConsent(false);
+    expect(signal?.aborted).toBe(true);
+  } finally {
+    secondResponse.resolve({
+      accepted: events.slice(200, 400).map((item) => item.event_id),
+      rejected: [],
+    });
+    await pending;
+  }
+  expect(api.post).toHaveBeenCalledTimes(2);
+  expect(api.get).not.toHaveBeenCalled();
+  expect(useInsights.getState().ledger.acknowledged).toHaveLength(200);
+  expect(useInsights.getState().ledger.events).toEqual(events);
+  jest.mocked(api.post).mockImplementation(async (_path, body) => ({
+    accepted: (body as { events: InsightEvent[] }).events.map((item) => item.event_id),
+    rejected: [],
+  }));
+  await setInsightsSyncConsent(true);
+  await refreshInsights();
+  expect(jest.mocked(api.post).mock.calls[2][1]).toEqual({ events: events.slice(200, 400) });
+  expect(jest.mocked(api.post).mock.calls[3][1]).toEqual({ events: events.slice(400) });
+  expect(useInsights.getState().ledger.acknowledged).toHaveLength(401);
 });

@@ -69,7 +69,7 @@ export function recordInsight(scope: string, event: InsightEvent) {
   if (ledger.events.some((item) => item.event_id === event.event_id)) return;
   write(scope, { ...ledger, events: [...ledger.events, event] });
   if (canSync(scope)) {
-    if (active) trailing = true;
+    if (active && isCurrent(active)) active.trailing = true;
     else void refreshInsights();
   }
 }
@@ -110,6 +110,7 @@ export async function setInsightsSyncConsent(enabled: boolean): Promise<void> {
   // persisted, explicit opt-in may lift this process-local block.
   const revision = ++consentRevision;
   syncDenied = true;
+  cancelActive();
   useInsights.setState({ consentPaused: true });
   if (!enabled) localStorage.setItem('android-insights-opt-out', 'true');
   await useConfigStore.getState().updateConfig({ insightsSyncEnabled: enabled });
@@ -127,16 +128,48 @@ export async function setInsightsSyncConsent(enabled: boolean): Promise<void> {
 }
 export function eraseAccountInsights(userId: string): void {
   const scope = `account:${userId}`;
+  if (active?.scope === scope) cancelActive();
   localStorage.setItem(`${key(scope)}:deleted`, 'true');
   localStorage.removeItem(key(scope));
   if (useInsights.getState().scope === scope)
     useInsights.setState({ ledger: empty(), status: 'idle' });
 }
-let trailing = false;
-let active: Promise<void> | null = null;
+interface SyncRun {
+  scope: string;
+  sessionCookie: string | null;
+  consentRevision: number;
+  controller: AbortController;
+  promise: Promise<void>;
+  trailing: boolean;
+  dispose: () => void;
+}
+let active: SyncRun | null = null;
+
+function isCurrent(run: SyncRun): boolean {
+  return (
+    active === run &&
+    !run.controller.signal.aborted &&
+    run.consentRevision === consentRevision &&
+    useAuthStore.getState().sessionCookie === run.sessionCookie &&
+    canSync(run.scope)
+  );
+}
+
+function cancelActive(): void {
+  const run = active;
+  if (!run) return;
+  // A new run need not wait for a transport that is slow to settle after abort.
+  // The old run can no longer acknowledge events or clear its replacement.
+  active = null;
+  run.dispose();
+  run.controller.abort();
+  if (useInsights.getState().scope === run.scope) useInsights.setState({ status: 'idle' });
+}
+
 export function refreshInsights(): Promise<void> {
   const scope = insightsScope();
-  const continuing = active && useInsights.getState().scope === scope;
+  if (active && !isCurrent(active)) cancelActive();
+  const continuing = active?.scope === scope;
   useInsights.setState({
     scope,
     ledger: read(scope),
@@ -144,22 +177,49 @@ export function refreshInsights(): Promise<void> {
     consentPaused: isConsentPaused(),
   });
   if (!canSync(scope)) return Promise.resolve();
-  if (active) return active;
-  const run = async () => {
+  if (active) return active.promise;
+  const run: SyncRun = {
+    scope,
+    sessionCookie: useAuthStore.getState().sessionCookie,
+    consentRevision,
+    controller: new AbortController(),
+    promise: Promise.resolve(),
+    trailing: false,
+    dispose: () => undefined,
+  };
+  active = run;
+  // Observe identity and consent while a request is waiting, even if Home is not
+  // focused. Once invalidated, an A→B→A or OFF→ON transition cannot revive a run.
+  const cancelIfInvalid = () => {
+    if (active !== run || isCurrent(run)) return;
+    cancelActive();
+    refreshInsights().catch(() => undefined);
+  };
+  const unsubscribeAuth = useAuthStore.subscribe(cancelIfInvalid);
+  const unsubscribeConfig = useConfigStore.subscribe(cancelIfInvalid);
+  run.dispose = () => {
+    unsubscribeAuth();
+    unsubscribeConfig();
+  };
+  const requestOptions = {
+    headers: { 'x-openwhispr-source': 'mobile' },
+    signal: run.controller.signal,
+  };
+  const sync = async () => {
     useInsights.setState({ status: 'loading' });
     try {
       const ledger = read(scope);
       const ack = new Set(ledger.acknowledged);
       const pending = ledger.events.filter((event) => !ack.has(event.event_id));
       for (let offset = 0; offset < pending.length; offset += 200) {
-        if (!canSync(scope)) return;
+        if (!isCurrent(run)) return;
         const batch = pending.slice(offset, offset + 200);
         const response = await api.post<{ accepted: string[]; rejected: string[] }>(
           '/api/analytics/events/batch',
           { events: batch },
-          { headers: { 'x-openwhispr-source': 'mobile' } },
+          requestOptions,
         );
-        if (!canSync(scope)) return;
+        if (!isCurrent(run)) return;
         if (!Array.isArray(response.accepted) || !Array.isArray(response.rejected))
           throw new Error('Invalid analytics acknowledgement');
         const ids = new Set(batch.map((event) => event.event_id));
@@ -168,13 +228,13 @@ export function refreshInsights(): Promise<void> {
           .forEach((id) => ack.add(id));
         write(scope, { ...read(scope), acknowledged: [...ack] });
       }
-      if (!canSync(scope)) return;
+      if (!isCurrent(run)) return;
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
       const response = await api.get<Summary>(
         `/api/analytics/summary?timeZone=${encodeURIComponent(timeZone)}`,
-        { headers: { 'x-openwhispr-source': 'mobile' } },
+        requestOptions,
       );
-      if (!canSync(scope)) return;
+      if (!isCurrent(run)) return;
       if (
         ![response.totalWords, response.totalDictations].every(
           (value) => Number.isSafeInteger(value) && value >= 0,
@@ -187,7 +247,7 @@ export function refreshInsights(): Promise<void> {
       });
       useInsights.setState({ status: 'idle' });
     } catch (error) {
-      if (insightsScope() === scope)
+      if (isCurrent(run))
         useInsights.setState({
           status:
             error instanceof ApiError && error.code === 'POLICY_CLOUD_BACKUP_BLOCKED'
@@ -195,15 +255,15 @@ export function refreshInsights(): Promise<void> {
               : 'offline',
         });
     } finally {
-      active = null;
-      if (!canSync(scope) && useInsights.getState().scope === scope)
-        useInsights.setState({ status: 'idle' });
-      if (insightsScope() !== scope || trailing) {
-        trailing = false;
-        void refreshInsights();
+      run.dispose();
+      if (active === run) {
+        active = null;
+        if (!canSync(scope) && useInsights.getState().scope === scope)
+          useInsights.setState({ status: 'idle' });
+        if (insightsScope() !== scope || run.trailing) void refreshInsights();
       }
     }
   };
-  active = run();
-  return active;
+  run.promise = sync();
+  return run.promise;
 }
