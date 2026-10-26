@@ -1272,7 +1272,7 @@ it('restores the provider saved last when switching back to Bring Your Own Key',
   await waitFor(() => expect(mockCredentialStatus).toHaveBeenCalled());
 });
 
-it('keeps the focused field and Save above the keyboard', async () => {
+it('enables iOS keyboard insets and retains handled taps in the provider form', async () => {
   render(<WorkflowSettingsScreen />);
   const scroll = screen.UNSAFE_getByType(ScrollView);
   expect(scroll.props.automaticallyAdjustKeyboardInsets).toBe(true);

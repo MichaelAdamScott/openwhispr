@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   AppState,
   Keyboard,
+  KeyboardAvoidingView,
   Linking,
   Platform,
   Pressable,
@@ -25,6 +26,7 @@ import { confirmDestructive } from '@/lib/alerts';
 import { SettingsSwitch } from '@/components/ui/SettingsSwitch';
 import { OnDeviceModelSection } from '@/components/settings/OnDeviceModelSection';
 import { useConfigToggle } from '@/hooks/useConfigToggle';
+import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { useCustomPromptsStore } from '@/store/useCustomPromptsStore';
 import { resolveCustomPrompt } from '@/config/prompts/registry';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -387,6 +389,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
   const [discoveredModels, setDiscoveredModels] = useState<{ id: string; name: string }[]>([]);
   const { toast, showToast } = useToast();
   const headerHeight = useHeaderHeight();
+  const keyboardHeight = useKeyboardHeight();
   const navigation = useNavigation();
   const diagnosticController = useRef<AbortController | null>(null);
   useEffect(
@@ -1021,7 +1024,12 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
   }
 
   return (
-    <View className="flex-1 bg-systemBackground">
+    <KeyboardAvoidingView
+      className="flex-1 bg-systemBackground"
+      behavior={Platform.OS === 'android' ? 'padding' : undefined}
+      // Android's hidden keyboard frame includes system bars; do not retain that inset.
+      enabled={Platform.OS === 'android' && keyboardHeight > 0}
+    >
       <SettingsScreen
         automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
@@ -1287,6 +1295,6 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
         )}
       </SettingsScreen>
       <Toast {...toast} topOffset={headerHeight + 8} />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
