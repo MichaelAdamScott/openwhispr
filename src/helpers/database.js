@@ -2870,6 +2870,16 @@ class DatabaseManager {
         // Manual is sticky — a pull never demotes a local manual row to learned.
         const mergedSource =
           existing.source === "manual" || incomingSource === "manual" ? "manual" : "learned";
+        // A local edit can follow the push ACK within the same SQLite second.
+        // Its timestamp cannot safely order it against the server's echo.
+        if (existing.sync_status === "pending") {
+          this.db
+            .prepare(
+              "UPDATE custom_dictionary SET cloud_id = COALESCE(cloud_id, ?), source = ? WHERE id = ?"
+            )
+            .run(cloudEntry.id, mergedSource, existing.id);
+          return this.db.prepare("SELECT * FROM custom_dictionary WHERE id = ?").get(existing.id);
+        }
         const sharedAt = hasSharedAt ? incomingSharedAt : existing.shared_at;
         this.db
           .prepare(
@@ -2911,35 +2921,48 @@ class DatabaseManager {
     }
   }
 
-  // `pushed` is the row as the push read it ({ word, shared_at, updated_at }).
-  // An edit since then (a rename, an un-share) stays pending and dirty, so the
-  // next push sends it; without `pushed` the row is marked synced as before.
-  markDictionaryEntrySynced(id, cloudId, pushed) {
+  markDictionaryEntrySynced(
+    id,
+    cloudId,
+    serverUpdatedAt = null,
+    expectedWord = null,
+    expectedSource = null,
+    serverSource = null,
+    pushed = null
+  ) {
     try {
       if (!this.db) throw new Error("Database not initialized");
-      const guarded = pushed && typeof pushed === "object";
-      // Guard on deleted_at so a delete or tombstone that raced the push isn't
-      // flipped back to 'synced' (which would strand the deletion). changes=0
-      // signals that race to SyncService, which reconciles the cloud row.
-      const unchanged =
-        "(@guarded = 0 OR (word IS @word AND shared_at IS @sharedAt AND updated_at IS @updatedAt))";
-      const result = this.db
-        .prepare(
-          `UPDATE custom_dictionary
-           SET cloud_id = @cloudId,
-               sync_status = CASE WHEN ${unchanged} THEN 'synced' ELSE sync_status END,
-               shared_at_dirty = CASE WHEN ${unchanged} THEN 0 ELSE shared_at_dirty END
-           WHERE id = @id AND deleted_at IS NULL`
-        )
-        .run({
-          cloudId,
-          id,
-          guarded: guarded ? 1 : 0,
-          word: guarded ? (pushed.word ?? null) : null,
-          sharedAt: guarded ? (pushed.shared_at ?? null) : null,
-          updatedAt: guarded ? (pushed.updated_at ?? null) : null,
-        });
-      return { success: result.changes > 0, changes: result.changes };
+      return this.db.transaction(() => {
+        const current = this.db.prepare("SELECT * FROM custom_dictionary WHERE id = ?").get(id);
+        if (!current || current.deleted_at) return { success: false, changes: 0 };
+
+        const unchanged =
+          (expectedWord === null || current.word === expectedWord) &&
+          (expectedSource === null || current.source === expectedSource) &&
+          (!pushed ||
+            (current.word === pushed.word &&
+              current.shared_at === (pushed.shared_at ?? null) &&
+              current.updated_at === pushed.updated_at));
+        // Edited rows still adopt the cloud identity, so they can PATCH next
+        // pass. Only missing/deleted rows authorize orphan cleanup (changes=0).
+        const result = this.db
+          .prepare(
+            `UPDATE custom_dictionary
+             SET cloud_id = ?, sync_status = ?, updated_at = COALESCE(?, updated_at),
+                 shared_at_dirty = CASE WHEN ? THEN 0 ELSE shared_at_dirty END,
+                 source = CASE WHEN ? = 'manual' THEN 'manual' ELSE source END
+             WHERE id = ?`
+          )
+          .run(
+            cloudId,
+            unchanged ? "synced" : "pending",
+            unchanged ? serverUpdatedAt : null,
+            unchanged ? 1 : 0,
+            serverSource,
+            id
+          );
+        return { success: result.changes > 0, changes: result.changes };
+      })();
     } catch (error) {
       debugLogger.error(
         "Error marking dictionary entry synced",
@@ -4584,6 +4607,9 @@ class DatabaseManager {
             "UPDATE notes SET space_id = ?, account_id = ?, sync_status = 'pending', updated_at = datetime('now'), left_team = (CASE WHEN ? = 1 AND cloud_id IS NOT NULL THEN 1 ELSE 0 END) WHERE folder_id = ? AND deleted_at IS NULL"
           )
           .run(spaceId, nextAccountId, leftTeam, id);
+        this.db
+          .prepare("UPDATE agent_conversations SET space_id = ? WHERE folder_id = ?")
+          .run(spaceId, id);
         return this.db
           .prepare("SELECT * FROM notes WHERE folder_id = ? AND deleted_at IS NULL")
           .all(id);

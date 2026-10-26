@@ -2799,14 +2799,22 @@ export class SyncService {
 
     for (const entry of updates) {
       try {
-        await DictionaryService.update(entry.cloud_id!, {
+        const server = await DictionaryService.update(entry.cloud_id!, {
           word: entry.word,
           source: entry.source,
           // Only a local set or clear: an ordinary edit leaves the server's
           // value alone, which another device may have set meanwhile.
           ...(entry.shared_at_dirty ? { shared_at: toCloudSharedAt(entry.shared_at) } : {}),
         });
-        await window.electronAPI.markDictionarySynced?.(entry.id, entry.cloud_id!, entry);
+        await window.electronAPI.markDictionarySynced?.(
+          entry.id,
+          server.id,
+          server.updated_at,
+          entry.word,
+          entry.source,
+          server.source,
+          entry
+        );
       } catch (err) {
         succeeded = false;
         // 404: another device purged the cloud row. Clear the stale cloud_id so
@@ -2849,6 +2857,10 @@ export class SyncService {
           const result = await window.electronAPI.markDictionarySynced?.(
             local.id,
             server.id,
+            server.updated_at,
+            local.word,
+            local.source,
+            server.source,
             local
           );
           if (result && result.changes === 0) {
@@ -2906,9 +2918,11 @@ export class SyncService {
       let cursorId: string | undefined = sinceId;
       let maxUpdatedAt = normalizeTimestamp(since);
       let maxId = sinceId ?? "";
-
+      // Starting at the epoch includes tombstones when backfilling moved words.
+      // Keep every page on the updated_at keyset, including the first: switching
+      // from created_at ordering would skip words edited out of creation order.
       while (true) {
-        const { entries, hasMore } = await DictionaryService.list(
+        const { entries, hasMore } = await DictionaryService.listDelta(
           cursor,
           DICTIONARY_BATCH_SIZE,
           cursorId

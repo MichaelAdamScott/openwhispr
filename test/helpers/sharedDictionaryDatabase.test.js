@@ -416,22 +416,30 @@ test("a push ack clears the marker only for the row it pushed", (t) => {
   // While that push is in flight, the user renames the word.
   db.applyDictionaryChanges({ add: ["QDRANT"] });
 
-  const result = db.markDictionaryEntrySynced(pushed.id, "cloud-1", {
-    word: pushed.word,
-    shared_at: pushed.shared_at,
-    updated_at: pushed.updated_at,
-  });
+  const result = db.markDictionaryEntrySynced(
+    pushed.id,
+    "cloud-1",
+    undefined,
+    pushed.word,
+    pushed.source,
+    undefined,
+    pushed
+  );
 
   const row = db.getDictionaryEntryByClientId("client-1");
   assert.equal(result.changes, 1);
   assert.deepEqual([row.sync_status, row.shared_at_dirty], ["pending", 1], "pushed again");
 
   const again = db.getDictionaryEntryByClientId("client-1");
-  db.markDictionaryEntrySynced(again.id, "cloud-1", {
-    word: again.word,
-    shared_at: again.shared_at,
-    updated_at: again.updated_at,
-  });
+  db.markDictionaryEntrySynced(
+    again.id,
+    "cloud-1",
+    undefined,
+    again.word,
+    again.source,
+    undefined,
+    again
+  );
   const done = db.getDictionaryEntryByClientId("client-1");
   assert.deepEqual([done.sync_status, done.shared_at_dirty], ["synced", 0]);
 });
@@ -481,7 +489,10 @@ test("shared_at is dirty only while a local set or clear awaits its push", (t) =
     created_at: "2026-10-20T09:00:00.000Z",
     updated_at: "2026-10-20T15:00:00.000Z",
   });
-  assert.equal(dirty(), 0, "the cloud's row replaces the local change");
+  assert.equal(dirty(), 1, "a cloud echo preserves the pending local change");
+  assert.equal(db.getDictionaryEntryByClientId("client-1").sync_status, "pending");
+  db.markDictionaryEntrySynced(db.getDictionaryEntryByClientId("client-1").id, "cloud-1");
+  assert.equal(dirty(), 0, "only acknowledging the push clears the local change");
 
   db.applyDictionaryChanges({ add: ["Parakeet"] });
   const parakeet = db.getPendingDictionary().find((row) => row.word === "Parakeet");
@@ -570,7 +581,8 @@ test("upsertDictionaryFromCloud stores shared_at, and a local re-add clears it",
   assert.ok(Object.hasOwn(pending[0], "shared_at"));
   assert.equal(pending[0].shared_at, null);
 
-  // A cloud null clears it too, and a deleted-then-restored word comes back unmoved.
+  // After the local change is acknowledged, a cloud null can clear the marker.
+  db.markDictionaryEntrySynced(readded.id, "cloud-1");
   db.markDictionaryWordsShared(["Qdrant"], "2026-10-20T13:00:00.000Z");
   db.upsertDictionaryFromCloud({
     id: "cloud-1",
@@ -712,4 +724,87 @@ test("Unicode revival keeps an equivalent personal word re-added meanwhile", (t)
 
   assert.deepEqual(db.reviveRetiredDictionaryWords(["Cafe\u0301"]), { revived: [] });
   assert.deepEqual(db.getDictionary(), ["Caf\u00e9"]);
+});
+
+for (const edit of ["sharing", "revision"]) {
+  test(`a push acknowledgment preserves an in-flight ${edit} edit and adopts manual provenance`, (t) => {
+    const db = createDb(t);
+    if (!db) return;
+    db.applyDictionaryChanges({ add: ["Qdrant"] }, "learned");
+    const [pushed] = db.getPendingDictionary();
+    if (edit === "sharing") {
+      db.markDictionaryWordsShared(["Qdrant"], "2026-10-20T13:00:00.000Z", {
+        pendingWords: ["Qdrant"],
+      });
+      // A sharing edit must be detected even within the same SQLite second.
+      db.db
+        .prepare("UPDATE custom_dictionary SET updated_at = ? WHERE id = ?")
+        .run(pushed.updated_at, pushed.id);
+    } else {
+      db.db
+        .prepare("UPDATE custom_dictionary SET updated_at = ? WHERE id = ?")
+        .run("2026-10-20 13:00:00", pushed.id);
+    }
+    const before = db.getDictionaryEntryByClientId(pushed.client_dict_id);
+    const result = db.markDictionaryEntrySynced(
+      pushed.id,
+      "cloud-1",
+      "2026-10-20T13:00:01.123Z",
+      pushed.word,
+      pushed.source,
+      "manual",
+      pushed
+    );
+    const current = db.getDictionaryEntryByClientId(pushed.client_dict_id);
+    assert.deepEqual(result, { success: true, changes: 1 });
+    assert.equal(current.cloud_id, "cloud-1");
+    assert.equal(current.source, "manual");
+    assert.equal(current.sync_status, "pending");
+    assert.equal(current.updated_at, before.updated_at);
+    assert.equal(current.shared_at, before.shared_at);
+    assert.equal(current.shared_at_dirty, before.shared_at_dirty);
+
+    const serverUpdatedAt = "2026-10-20T13:00:02.456Z";
+    db.markDictionaryEntrySynced(
+      current.id,
+      "cloud-1",
+      serverUpdatedAt,
+      current.word,
+      current.source,
+      "learned",
+      current
+    );
+    const synced = db.getDictionaryEntryByClientId(pushed.client_dict_id);
+    assert.equal(synced.sync_status, "synced");
+    assert.equal(synced.shared_at_dirty, 0);
+    assert.equal(synced.shared_at, before.shared_at);
+    assert.equal(synced.source, "manual");
+    assert.equal(synced.updated_at, serverUpdatedAt);
+    assert.equal(synced.created_at, pushed.created_at);
+  });
+}
+
+test("cloud pull preserves pending sharing changes while adopting manual provenance", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  db.applyDictionaryChanges({ add: ["Qdrant"] }, "learned");
+  db.markDictionaryWordsShared(["Qdrant"], "2026-10-20T13:00:00.000Z", {
+    pendingWords: ["Qdrant"],
+  });
+  const [pending] = db.getPendingDictionary();
+  const merged = db.upsertDictionaryFromCloud({
+    id: "cloud-1",
+    client_dict_id: pending.client_dict_id,
+    word: "QDRANT",
+    source: "manual",
+    shared_at: null,
+    updated_at: "2026-10-20T13:00:01.123Z",
+  });
+  assert.equal(merged.cloud_id, "cloud-1");
+  assert.equal(merged.source, "manual");
+  assert.equal(merged.word, pending.word);
+  assert.equal(merged.shared_at, pending.shared_at);
+  assert.equal(merged.shared_at_dirty, 1);
+  assert.equal(merged.sync_status, "pending");
+  assert.equal(merged.updated_at, pending.updated_at);
 });

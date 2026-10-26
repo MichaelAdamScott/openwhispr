@@ -23,7 +23,7 @@ import {
 } from "../../stores/settingsStore";
 import { cn } from "../lib/utils";
 import logger from "../../utils/logger";
-import { parseTranscriptSegments } from "../../utils/parseTranscriptSegments";
+import { parseSeedSegments, parseTranscriptSegments } from "../../utils/parseTranscriptSegments";
 import { isExplicitSpeakerCount, resolveExpectedSpeakerCount } from "../../utils/participants";
 import {
   buildLlmTranscript,
@@ -705,7 +705,7 @@ export default function PersonalNotesView({
   useEffect(() => {
     if (!meetingRecordingRequest || activeNoteId !== meetingRecordingRequest.noteId) return;
     const note = activeNote?.id === meetingRecordingRequest.noteId ? activeNote : null;
-    const seedSegments = note?.transcript ? parseTranscriptSegments(note.transcript) : [];
+    const seedSegments = parseSeedSegments(note?.transcript);
     void handleMeetingRecordingRequest({
       args: {
         noteId: meetingRecordingRequest.noteId,

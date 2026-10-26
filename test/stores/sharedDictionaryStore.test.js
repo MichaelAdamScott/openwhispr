@@ -101,14 +101,30 @@ test("refresh() auto-selecting the only workspace loads its hints", async (t) =>
   assert.deepEqual(ctx.hints(), { space: [], workspace: ["Qdrant"] });
 });
 
-test("refresh() dropping the active workspace empties hints", async (t) => {
+test("refresh() replacing a missing active workspace reloads the fallback hints", async (t) => {
   const ctx = await setup(t, { workspaces: [workspace(W1)] });
   ctx.useWorkspaceStore.getState().setActiveWorkspaceId(W1);
   await flush();
   assert.deepEqual(ctx.hints().workspace, ["Qdrant"]);
 
-  // The member left W1 and belongs to two others: nothing is auto-selected.
+  // The member left W1: the first remaining workspace becomes active.
   ctx.setWorkspaces([workspace(W2), workspace(W3)]);
+  await ctx.useWorkspaceStore.getState().refresh();
+  await flush();
+
+  assert.equal(ctx.useWorkspaceStore.getState().activeWorkspaceId, W2);
+  assert.equal(ctx.useSharedDictionaryStore.getState().workspaceId, W2);
+  assert.deepEqual(ctx.hints(), { space: [], workspace: ["Biscuit"] });
+  assert.deepEqual(ctx.persisted(), { workspaceId: W2, space: [], workspace: ["Biscuit"] });
+});
+
+test("refresh() losing all workspaces empties hints", async (t) => {
+  const ctx = await setup(t, { workspaces: [workspace(W1)] });
+  ctx.useWorkspaceStore.getState().setActiveWorkspaceId(W1);
+  await flush();
+  assert.deepEqual(ctx.hints().workspace, ["Qdrant"]);
+
+  ctx.setWorkspaces([]);
   await ctx.useWorkspaceStore.getState().refresh();
   await flush();
 
