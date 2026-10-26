@@ -96,6 +96,79 @@ test("an update keeps every other frontmatter line byte for byte", (t) => {
   assert.equal(library.scan()[0].valid, true);
 });
 
+test(
+  "an update preserves permissions of retained and edited files",
+  { skip: process.platform === "win32" },
+  (t) => {
+    const { library, skillsDir } = playbook(t);
+    const folder = path.join(skillsDir, NAME);
+    writeFolder(skillsDir, NAME, { "scripts/run.sh": "#!/bin/sh\nprintf before\n" });
+    fs.chmodSync(path.join(folder, "scripts/run.sh"), 0o751);
+    fs.chmodSync(path.join(folder, "references/objections.md"), 0o640);
+
+    library.applyUpdate({ name: NAME, description: "Updated description.", files: [] });
+
+    assert.equal(fs.statSync(path.join(folder, "scripts/run.sh")).mode & 0o777, 0o751);
+    assert.equal(fs.statSync(path.join(folder, "references/objections.md")).mode & 0o777, 0o640);
+
+    library.applyUpdate({
+      name: NAME,
+      files: [{ path: "scripts/run.sh", content: "#!/bin/sh\nprintf after\n" }],
+    });
+
+    assert.equal(fs.statSync(path.join(folder, "scripts/run.sh")).mode & 0o777, 0o751);
+    assert.equal(
+      fs.readFileSync(path.join(folder, "scripts/run.sh"), "utf8"),
+      "#!/bin/sh\nprintf after\n"
+    );
+  }
+);
+
+test("Undo restores the saved file permissions", { skip: process.platform === "win32" }, (t) => {
+  const { library, skillsDir } = playbook(t);
+  writeFolder(skillsDir, NAME, { "scripts/run.sh": "#!/bin/sh\nprintf before\n" });
+  const script = path.join(skillsDir, NAME, "scripts/run.sh");
+  fs.chmodSync(script, 0o751);
+  const { versionId } = library.applyUpdate({
+    name: NAME,
+    files: [{ path: "scripts/run.sh", content: "#!/bin/sh\nprintf after\n" }],
+  });
+
+  assert.equal(library.undo(NAME, versionId), true);
+
+  assert.equal(fs.statSync(script).mode & 0o777, 0o751);
+  assert.equal(fs.readFileSync(script, "utf8"), "#!/bin/sh\nprintf before\n");
+});
+
+test("a restart discards an unfinished snapshot so the last successful save can be undone", (t) => {
+  const { library, database, userDataDir, skillsDir, versionsDir } = playbook(t);
+  const before = snapshot(path.join(skillsDir, NAME));
+  const { versionId } = library.applyUpdate(SSO);
+  // The process stops after copying the old skill, before writing the next update.
+  const incomplete = library.saveVersion(NAME);
+
+  const restarted = new SkillLibrary({ userDataDir, database, recommendedDir: RECOMMENDED_DIR });
+
+  assert.equal(restarted.undo(NAME, versionId), true);
+  assert.deepEqual(snapshot(path.join(skillsDir, NAME)), before);
+  assert.equal(fs.existsSync(path.join(versionsDir, incomplete)), false);
+});
+
+test("discarding an unfinished snapshot does not undo a later write that already landed", (t) => {
+  const { library, database, userDataDir, skillsDir, versionsDir } = playbook(t);
+  const { versionId } = library.applyUpdate(SSO);
+  const incomplete = library.saveVersion(NAME);
+  // The next write landed, but the process stopped before its Undo note was written.
+  fs.writeFileSync(path.join(skillsDir, NAME, "references/objections.md"), "A later answer.\n");
+  const latest = snapshot(path.join(skillsDir, NAME));
+
+  const restarted = new SkillLibrary({ userDataDir, database, recommendedDir: RECOMMENDED_DIR });
+
+  assert.equal(restarted.undo(NAME, versionId), false);
+  assert.deepEqual(snapshot(path.join(skillsDir, NAME)), latest);
+  assert.equal(fs.existsSync(path.join(versionsDir, incomplete)), false);
+});
+
 test("a missing description key is added before the closing line", () => {
   assert.equal(
     replaceFrontmatterValue("---\nname: recap\n---\n\nBody\n", "description", 'Says "hi".'),

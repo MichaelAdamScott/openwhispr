@@ -19,6 +19,7 @@ import { useSkillsStore } from "../../stores/skillsStore";
 import {
   saveSkillApproval,
   skillVersionKey,
+  skillTitleKey,
   skipSkillApproval,
   undoSkillApproval,
   undoSkillVersion,
@@ -62,10 +63,6 @@ function ExpandToggle({
   );
 }
 
-// A title as main matches it to a skill: case, spacing and how accents are encoded don't count.
-const titleKey = (title: string): string =>
-  title.trim().replace(/\s+/g, " ").normalize("NFC").toLowerCase();
-
 function CreateSkillBody({
   entry,
   editing,
@@ -79,11 +76,12 @@ function CreateSkillBody({
   // The skill the title names now, so an edited title says what saving does as it is typed;
   // Save checks again in main. The card's own check stands while the title is as checked.
   const named = useSkillsStore((state) =>
-    state.skills.find((skill) => titleKey(skill.displayName) === titleKey(draft.title))
+    state.skills.find((skill) => skillTitleKey(skill.displayName) === skillTitleKey(draft.title))
   );
   const replaces =
     named !== undefined ||
-    (Boolean(entry.replacesExisting) && titleKey(draft.title) === titleKey(entry.checkedTitle));
+    (Boolean(entry.replacesExisting) &&
+      skillTitleKey(draft.title) === skillTitleKey(entry.checkedTitle));
   // Saving switches the skill on, which only needs saying for one that is off now.
   const existingOff = named !== undefined && !(named.enabled && named.valid);
   const [showFull, setShowFull] = useState(false);

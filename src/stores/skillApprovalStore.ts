@@ -120,6 +120,10 @@ function entryFor(key: string): SkillApprovalEntry | undefined {
   return useSkillApprovalStore.getState().entries[key];
 }
 
+// Matches the library's title comparison, including cosmetic edits to a deleted target.
+export const skillTitleKey = (title: string): string =>
+  title.trim().replace(/\s+/g, " ").normalize("NFC").toLowerCase();
+
 type SkillCreatePatch = Pick<SkillCreateApproval, "replacesExisting" | "baseHash" | "checkedTitle">;
 
 function patchEntry(
@@ -218,6 +222,7 @@ export async function saveSkillApproval(key: string): Promise<void> {
   const entry = entryFor(key);
   if (!entry || entry.state !== "pending") return;
   patchEntry(key, { state: "saving", problems: undefined });
+  let baseHash = entry.baseHash;
   if (entry.kind === "create") {
     // An edited title can name a skill the user already has, and saving would replace it.
     // The card says so first, and the next Save confirms.
@@ -237,9 +242,18 @@ export async function saveSkillApproval(key: string): Promise<void> {
       });
       return;
     }
+    if (!check.existing && skillTitleKey(entry.draft.title) !== skillTitleKey(entry.checkedTitle)) {
+      baseHash = undefined;
+      patchEntry(key, {
+        name: check.name,
+        replacesExisting: false,
+        baseHash: undefined,
+        checkedTitle: entry.draft.title,
+      });
+    }
   }
   // The hash the card was shown against, so a skill changed since isn't overwritten unseen.
-  const base = entry.baseHash === undefined ? {} : { baseHash: entry.baseHash };
+  const base = baseHash === undefined ? {} : { baseHash };
   const saving =
     entry.kind === "update"
       ? window.electronAPI?.skillsApplyUpdate?.({ ...entry.draft, ...base })

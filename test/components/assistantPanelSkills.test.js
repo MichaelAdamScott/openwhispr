@@ -10,7 +10,7 @@ const noop = () => {};
 
 // The voice panel with its chat hooks replaced: sends are recorded with their options, and
 // the composer renders its leading row so a chip is real and clickable.
-function panelMocks({ realMarkdown = false } = {}) {
+function panelMocks({ realMarkdown = false, realSkillCards = false } = {}) {
   return {
     "react-i18next": SKILLS_MOCKS["react-i18next"],
     "/ui/useToast": `export function useToast() { return { toast() {} }; }`,
@@ -54,7 +54,8 @@ function panelMocks({ realMarkdown = false } = {}) {
         return createElement("div", null, props.leadingRow, createElement("textarea"));
       }
     `,
-    "/chat/SkillApprovalCard": `
+    ...(!realSkillCards && {
+      "/chat/SkillApprovalCard": `
       import { createElement } from "react";
       import { useSkillChatActions } from "/components/chat/skillChatActions.ts";
       export function SkillApprovalCard({ entry }) {
@@ -65,6 +66,7 @@ function panelMocks({ realMarkdown = false } = {}) {
         });
       }
     `,
+    }),
     "/hooks/useWindowDrag": `
       export function useWindowDrag() { return { handleMouseDown() {}, handleMouseUp() {} }; }
     `,
@@ -114,7 +116,10 @@ const PANEL_PROPS = {
 };
 
 // Browser globals (and, for a mount, the DOM) come first: react-dom reads them as it loads.
-async function loadPanel(t, { messages = [], activeToolName = null, realMarkdown } = {}) {
+async function loadPanel(
+  t,
+  { messages = [], activeToolName = null, realMarkdown, realSkillCards } = {}
+) {
   globalThis.__panelMessages = messages;
   globalThis.__panelActiveToolName = activeToolName;
   globalThis.__panelSends = [];
@@ -132,7 +137,7 @@ async function loadPanel(t, { messages = [], activeToolName = null, realMarkdown
   const vite = await createRendererServer(t, {
     cachePrefix: "openwhispr-assistant-panel-skills-test-",
     noExternal: ["react-i18next"],
-    mockModules: panelMocks({ realMarkdown }),
+    mockModules: panelMocks({ realMarkdown, realSkillCards }),
   });
   const { AssistantPanel } = await vite.ssrLoadModule("/components/dictation/AssistantPanel.tsx");
   return { vite, AssistantPanel };
@@ -275,6 +280,59 @@ test("the voice panel renders skill cards", async (t) => {
     0,
     "a card waiting on the user is not covered by the tool overlay"
   );
+});
+
+test("a reopened voice panel restores the saved skill card and its working Undo", async (t) => {
+  const messages = [
+    {
+      id: "reloaded-assistant",
+      role: "assistant",
+      content: "Saved the change.",
+      isStreaming: false,
+      toolCalls: [
+        {
+          id: "saved-call",
+          name: "update_skill",
+          arguments: "{}",
+          status: "completed",
+          metadata: {
+            status: "saved",
+            kind: "update",
+            name: "weekly-report",
+            title: "Weekly report",
+            versionId: "123",
+          },
+        },
+      ],
+    },
+  ];
+  const { container, vite } = await mountPanel(
+    t,
+    { pendingCommand: null },
+    { messages, realSkillCards: true }
+  );
+  const store = await vite.ssrLoadModule("/stores/skillApprovalStore.ts");
+  const undoCalls = [];
+  globalThis.window.electronAPI.skillsUndo = async (...args) => {
+    undoCalls.push(args);
+    return { ok: true };
+  };
+  // A loaded conversation has fresh message IDs and no matching live approval entry.
+  await React.act(async () => store.useSkillApprovalStore.setState({ entries: {}, undos: {} }));
+  const buttons = () =>
+    findAll(
+      container,
+      (node) => node.tagName === "BUTTON" && node.textContent === "skills.approval.undo"
+    );
+
+  assert.equal(buttons().length, 1);
+  assert.match(container.textContent, /Weekly report/);
+  await click(buttons()[0]);
+  await settle();
+
+  assert.deepEqual(undoCalls, [["weekly-report", "123"]]);
+  assert.match(container.textContent, /skills\.approval\.undone/);
+  assert.equal(buttons().length, 0);
 });
 
 test("voice panel code blocks offer Paste into app", async (t) => {

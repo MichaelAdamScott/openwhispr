@@ -109,7 +109,7 @@ function walkSkillFolder(root) {
       if (!entry.isFile()) continue;
       const fullPath = path.join(dir, entry.name);
       const stats = fs.lstatSync(fullPath);
-      files.push({ path: relPath, fullPath, size: stats.size });
+      files.push({ path: relPath, fullPath, size: stats.size, mode: stats.mode & 0o777 });
       bytes += stats.size;
       newest = Math.max(newest, stats.mtimeMs);
       if (files.length > SKILL_LIMITS.maxFiles) return { files, bytes, tooMany: true };
@@ -256,10 +256,19 @@ class SkillLibrary {
       return;
     }
     for (const name of versioned) {
+      if (!isSkillFolderName(name)) continue;
+      const folder = path.join(this.versionsDir, name);
       // A skill this start couldn't put back keeps them for the start that does.
       const waiting = entries.some((entry) => MOVED_ASIDE.exec(entry)?.[1] === name);
-      if (isSkillFolderName(name) && !this._exists(name) && !waiting) {
-        this._removeQuietly(path.join(this.versionsDir, name));
+      if (!this._exists(name) && !waiting) {
+        this._removeQuietly(folder);
+        continue;
+      }
+      // A snapshot without its commit note must not block Undo of the last completed save.
+      for (const versionId of versionIds(folder)) {
+        if (!fs.existsSync(path.join(folder, `${versionId}.json`))) {
+          this._removeQuietly(path.join(folder, String(versionId)));
+        }
       }
     }
   }
@@ -605,6 +614,7 @@ class SkillLibrary {
     const files = walked.files.map((file) => ({
       path: file.path,
       data: fs.readFileSync(file.fullPath),
+      mode: file.mode,
     }));
     // The switch goes back too, unless the user changed it after the save.
     const enabledNow = this.database.getSkillStates().find((s) => s.name === name)?.enabled;
@@ -788,7 +798,11 @@ class SkillLibrary {
     const kept = walked.files
       .filter((file) => file.path !== "SKILL.md" && !replaced.has(foldPath(file.path)))
       .map((file) => ({ path: file.path, data: fs.readFileSync(file.fullPath) }));
-    const files = [skillFile, ...kept, ...changedFiles];
+    const modes = new Map(walked.files.map((file) => [foldPath(file.path), file.mode]));
+    const files = [skillFile, ...kept, ...changedFiles].map((file) => ({
+      ...file,
+      mode: modes.get(foldPath(file.path)),
+    }));
     if (hasClashingPaths(files.map((file) => file.path))) {
       return { problem: { code: "unsafePath" } };
     }
@@ -876,6 +890,10 @@ class SkillLibrary {
         const destination = path.join(staging, ...file.path.split("/"));
         fs.mkdirSync(path.dirname(destination), { recursive: true });
         fs.writeFileSync(destination, file.data);
+        // chmod after creation preserves existing permissions even under a stricter umask.
+        if (process.platform !== "win32" && file.mode !== undefined) {
+          fs.chmodSync(destination, file.mode);
+        }
       }
       if (this._exists(name)) {
         movedAside = path.join(this.skillsDir, `.replaced-${crypto.randomUUID()}-${name}`);

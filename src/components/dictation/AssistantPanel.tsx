@@ -50,7 +50,8 @@ import {
 } from "../../helpers/assistantResponseDelivery";
 import { buildAssistantCommandSendOptions } from "./assistantCommandOptions";
 import { ApprovalCard } from "../chat/ApprovalCard";
-import { SkillApprovalCard } from "../chat/SkillApprovalCard";
+import { SkillApprovalCard, SkillCardSummary } from "../chat/SkillApprovalCard";
+import { readSkillCardRecord } from "../chat/skillCardRecord";
 import { SkillChip } from "../chat/SkillChip";
 import { approvalKey, useConnectorApprovalStore } from "../../stores/connectorApprovalStore";
 import { useSkillApprovalStore } from "../../stores/skillApprovalStore";
@@ -325,6 +326,14 @@ export function AssistantPanel({
     : [];
   const panelApprovals = latestToolKeys.flatMap((key) => approvalEntries[key] ?? []);
   const panelSkillApprovals = latestToolKeys.flatMap((key) => skillApprovalEntries[key] ?? []);
+  const savedSkillCards = latestAssistantMessage
+    ? (latestAssistantMessage.toolCalls ?? []).flatMap((toolCall) => {
+        const key = approvalKey(latestAssistantMessage.id, toolCall.id);
+        if (skillApprovalEntries[key]) return [];
+        const record = readSkillCardRecord(toolCall);
+        return record ? [{ key, record }] : [];
+      })
+    : [];
   const approvalAwaitingUser =
     panelApprovals.some((entry) => entry.state === "pending" || entry.state === "committing") ||
     panelSkillApprovals.some((entry) => entry.state === "pending" || entry.state === "saving");
@@ -628,6 +637,9 @@ export function AssistantPanel({
             ))}
             {panelSkillApprovals.map((entry) => (
               <SkillApprovalCard key={entry.key} entry={entry} />
+            ))}
+            {savedSkillCards.map(({ key, record }) => (
+              <SkillCardSummary key={key} record={record} />
             ))}
             {thinking && (
               <div role="status">

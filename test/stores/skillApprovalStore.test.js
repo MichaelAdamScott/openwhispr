@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { installBrowserGlobals } = require("../lib/rendererTestHarness");
 
+const { setup: setupLibrary } = require("../helpers/skills/libraryFixture");
+
 const load = () => import("../../src/stores/skillApprovalStore.ts");
 
 const PROPOSAL = {
@@ -201,6 +203,64 @@ test("an edited title that names a skill takes that skill's hash for the next Sa
 
   await store.saveSkillApproval(key);
   assert.deepEqual(calls.save, [{ ...PROPOSAL, baseHash: "h1" }]);
+});
+
+test("renaming a replacement proposal to a new title saves a separate skill", async (t) => {
+  const { library } = setupLibrary(t);
+  library.create({ ...PROPOSAL, instructions: "Original instructions." });
+  const checked = library.checkProposal({ kind: "create", proposal: PROPOSAL });
+  const { store, entryOf } = await freshStore(t, {
+    api: {
+      skillsCheckProposal: async (request) => library.checkProposal(request),
+      skillsSaveProposal: async (proposal) => {
+        const result = library.saveProposal(proposal);
+        return result.changed ? { ok: false, error: "changed" } : { ok: true, ...result };
+      },
+    },
+  });
+  const outcome = store.requestSkillApproval(context("call-1").value, {
+    ...CREATE,
+    replacesExisting: true,
+    baseHash: checked.hash,
+  });
+  const { key } = entryOf("call-1");
+  store.updateSkillDraft(key, { title: "Separate recap" });
+
+  await store.saveSkillApproval(key);
+
+  assert.equal((await outcome).state, "saved");
+  assert.equal(entryOf("call-1").replacesExisting, false);
+  assert.equal(entryOf("call-1").baseHash, undefined);
+  assert.equal(library.get("separate-recap").displayName, "Separate recap");
+  assert.match(library.get(CREATE.name).markdown, /Original instructions/);
+});
+
+test("a deleted replacement is not recreated by a cosmetic title edit", async (t) => {
+  const { library } = setupLibrary(t);
+  library.create(PROPOSAL);
+  const checked = library.checkProposal({ kind: "create", proposal: PROPOSAL });
+  const { store, entryOf } = await freshStore(t, {
+    api: {
+      skillsCheckProposal: async (request) => library.checkProposal(request),
+      skillsSaveProposal: async (proposal) => {
+        const result = library.saveProposal(proposal);
+        return result.changed ? { ok: false, error: "changed" } : { ok: true, ...result };
+      },
+    },
+  });
+  const outcome = store.requestSkillApproval(context("call-1").value, {
+    ...CREATE,
+    replacesExisting: true,
+    baseHash: checked.hash,
+  });
+  library.uninstall(CREATE.name);
+  const { key } = entryOf("call-1");
+  store.updateSkillDraft(key, { title: `  ${PROPOSAL.title.toUpperCase()}  ` });
+
+  await store.saveSkillApproval(key);
+
+  assert.deepEqual(await outcome, { state: "changed" });
+  assert.deepEqual(library.scan(), []);
 });
 
 test("a duplicate tool call doesn't steal the first card", async (t) => {
