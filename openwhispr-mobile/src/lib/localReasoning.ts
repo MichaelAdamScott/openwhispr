@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { AppleLLM, type AppleLLMAvailability } from '@/lib/appleLLM';
+import { androidCopy } from '@/lib/androidCopy';
 import type {
   LocalReasoningErrorCode,
   LocalReasoningReadiness,
@@ -257,7 +258,10 @@ export function getLocalReasoningLanguageNote(readiness: LocalReasoningReadiness
 
 export function getLocalReasoningUnavailableMessage(readiness?: LocalReasoningReadiness): string {
   if (Platform.OS === 'android')
-    return 'Download a local text model in Account → Models to use on-device AI.';
+    return androidCopy(
+      'workflowSettings.localModelNeeded',
+      'Download a local text model in Account → Models to use on-device AI.',
+    );
   switch (readiness?.status) {
     case 'unsupportedDevice':
       return 'On-Device AI needs an iPhone with Apple Intelligence (iPhone 15 Pro or later).';

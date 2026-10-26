@@ -827,6 +827,24 @@
       "invalidResponse": "O provedor retornou uma resposta inválida ou vazia.",
       "truncatedResponse": "O provedor parou antes de concluir. Tente um modelo com um limite de saída maior.",
       "providerUnsupported": "Este provedor não está disponível neste dispositivo."
+    },
+    "workflowAlerts": {
+      "unavailableTitle": "Processamento no dispositivo indisponível",
+      "readinessFailed": "Não foi possível verificar o modelo local agora. Tente novamente.",
+      "speechUnavailable": "A transcrição local não está disponível neste dispositivo.",
+      "signInRequired": "É necessário entrar",
+      "createAccount": "Criar uma conta",
+      "createAccountAction": "Criar conta",
+      "signInCloud": "Entre para usar {{feature}} com processamento na nuvem.",
+      "createCloud": "Crie uma conta para usar {{feature}} com processamento na nuvem.",
+      "signInCloudOrLocal": "Entre para usar {{feature}} com processamento na nuvem ou ative {{localMode}} em {{account}} → {{models}}.",
+      "createCloudOrLocal": "Crie uma conta para usar {{feature}} com processamento na nuvem ou ative {{localMode}} em {{account}} → {{models}}.",
+      "signInCloudOnly": "Entre para usar {{feature}}. Este recurso sempre usa IA na nuvem, mesmo em {{localMode}}.",
+      "createCloudOnly": "Crie uma conta para usar {{feature}}. Este recurso sempre usa IA na nuvem, mesmo em {{localMode}}.",
+      "cloudTranscription": "a transcrição na nuvem",
+      "cloudCleanup": "a revisão de texto na nuvem",
+      "aiActions": "as ações de IA",
+      "aiChat": "o chat com IA"
     }
   }
 }

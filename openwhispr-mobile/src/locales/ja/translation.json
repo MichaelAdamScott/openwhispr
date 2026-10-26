@@ -827,6 +827,24 @@
       "invalidResponse": "プロバイダーから無効または空の応答が返されました。",
       "truncatedResponse": "プロバイダーが完了前に停止しました。出力上限が大きいモデルをお試しください。",
       "providerUnsupported": "このプロバイダーはこの端末では利用できません。"
+    },
+    "workflowAlerts": {
+      "unavailableTitle": "デバイス内処理を利用できません",
+      "readinessFailed": "現在、ローカルモデルを確認できません。もう一度お試しください。",
+      "speechUnavailable": "このデバイスではローカル文字起こしを利用できません。",
+      "signInRequired": "ログインが必要です",
+      "createAccount": "アカウントを作成",
+      "createAccountAction": "アカウントを作成",
+      "signInCloud": "クラウド処理で{{feature}}を利用するにはログインしてください。",
+      "createCloud": "クラウド処理で{{feature}}を利用するにはアカウントを作成してください。",
+      "signInCloudOrLocal": "クラウド処理で{{feature}}を利用するにはログインするか、{{account}} → {{models}}で{{localMode}}を有効にしてください。",
+      "createCloudOrLocal": "クラウド処理で{{feature}}を利用するにはアカウントを作成するか、{{account}} → {{models}}で{{localMode}}を有効にしてください。",
+      "signInCloudOnly": "{{feature}}を利用するにはログインしてください。この機能は{{localMode}}でも常にクラウドAIを使用します。",
+      "createCloudOnly": "{{feature}}を利用するにはアカウントを作成してください。この機能は{{localMode}}でも常にクラウドAIを使用します。",
+      "cloudTranscription": "クラウド文字起こし",
+      "cloudCleanup": "クラウドでの文章修正",
+      "aiActions": "AIアクション",
+      "aiChat": "AIチャット"
     }
   }
 }

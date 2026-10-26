@@ -23,6 +23,7 @@ import {
   type MobileInferenceScope,
 } from '@/lib/mobileProviders';
 import { getPrivateModeReadiness, getPrivateModeUnavailableMessage } from '@/lib/privateMode';
+import { androidCopy } from '@/lib/androidCopy';
 
 type SpeechScope = 'dictation' | 'upload';
 
@@ -34,14 +35,23 @@ function isSpeechScope(scope: MobileInferenceScope): scope is SpeechScope {
   return scope === 'dictation' || scope === 'upload';
 }
 
+function showOnDeviceUnavailable(message: string): void {
+  const title = androidCopy('workflowAlerts.unavailableTitle', 'On-Device Unavailable');
+  if (Platform.OS === 'android')
+    Alert.alert(title, message, [{ text: androidCopy('done', 'Done') }]);
+  else Alert.alert(title, message);
+}
+
 async function transcriptionModelReady(): Promise<ModeSwitchResult | null> {
   const readiness = await getPrivateModeReadiness().catch(() => null);
   if (!readiness) {
-    Alert.alert('On-Device Unavailable', 'Unable to check the local model right now.');
+    showOnDeviceUnavailable(
+      androidCopy('workflowAlerts.readinessFailed', 'Unable to check the local model right now.'),
+    );
     return 'refused';
   }
   if (readiness.status === 'unavailable') {
-    Alert.alert('On-Device Unavailable', getPrivateModeUnavailableMessage());
+    showOnDeviceUnavailable(getPrivateModeUnavailableMessage());
     return 'refused';
   }
   // Nothing to run yet: open the model list, where every on-device model can be
@@ -57,6 +67,10 @@ async function localTextModelReady(): Promise<ModeSwitchResult | null> {
   const readiness = await getLocalReasoningReadiness({ refresh: true });
   if (readiness.status === 'ready') return null;
   const message = getLocalReasoningUnavailableMessage(readiness);
+  if (Platform.OS === 'android') {
+    showOnDeviceUnavailable(message);
+    return 'refused';
+  }
   if (!canRunLocalReasoning(readiness)) {
     Alert.alert('On-Device Unavailable', message);
     return 'refused';
@@ -68,11 +82,9 @@ async function localTextModelReady(): Promise<ModeSwitchResult | null> {
   }
   Alert.alert(
     'On-Device Unavailable',
-    Platform.OS === 'android'
-      ? message
-      : `${message} Keep this page open and On-Device turns on once Apple Intelligence is ready.`,
+    `${message} Keep this page open and On-Device turns on once Apple Intelligence is ready.`,
   );
-  return Platform.OS === 'android' ? 'refused' : 'not-ready';
+  return 'not-ready';
 }
 
 // On-Device dictation keeps only dictation on this iPhone, so turning it on offers to move note

@@ -827,6 +827,24 @@
       "invalidResponse": "服務供應商傳回了無效或空白的回應。",
       "truncatedResponse": "服務供應商在完成前停止了處理。請嘗試輸出上限較高的模型。",
       "providerUnsupported": "此裝置無法使用該服務供應商。"
+    },
+    "workflowAlerts": {
+      "unavailableTitle": "裝置端處理無法使用",
+      "readinessFailed": "目前無法檢查本機模型。請再試一次。",
+      "speechUnavailable": "此裝置無法使用本機轉錄。",
+      "signInRequired": "需要登入",
+      "createAccount": "建立帳號",
+      "createAccountAction": "建立帳號",
+      "signInCloud": "請登入以使用雲端處理的{{feature}}功能。",
+      "createCloud": "請建立帳號以使用雲端處理的{{feature}}功能。",
+      "signInCloudOrLocal": "請登入以使用雲端處理的{{feature}}功能，或在{{account}} → {{models}}中開啟{{localMode}}。",
+      "createCloudOrLocal": "請建立帳號以使用雲端處理的{{feature}}功能，或在{{account}} → {{models}}中開啟{{localMode}}。",
+      "signInCloudOnly": "請登入以使用{{feature}}。此功能一律使用雲端 AI，即使在{{localMode}}下也是如此。",
+      "createCloudOnly": "請建立帳號以使用{{feature}}。此功能一律使用雲端 AI，即使在{{localMode}}下也是如此。",
+      "cloudTranscription": "雲端轉錄",
+      "cloudCleanup": "雲端文字潤飾",
+      "aiActions": "AI 操作",
+      "aiChat": "AI 聊天"
     }
   }
 }

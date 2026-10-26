@@ -827,6 +827,24 @@
       "invalidResponse": "The provider returned an invalid or empty response.",
       "truncatedResponse": "The provider stopped before finishing. Try a model with a larger output limit.",
       "providerUnsupported": "This provider is not available on this device."
+    },
+    "workflowAlerts": {
+      "unavailableTitle": "On-Device Unavailable",
+      "readinessFailed": "Unable to check the local model right now. Try again.",
+      "speechUnavailable": "On-device transcription is unavailable on this device.",
+      "signInRequired": "Sign in required",
+      "createAccount": "Create an account",
+      "createAccountAction": "Create Account",
+      "signInCloud": "Sign in to use {{feature}} with cloud processing.",
+      "createCloud": "Create an account to use {{feature}} with cloud processing.",
+      "signInCloudOrLocal": "Sign in to use {{feature}} with cloud processing, or turn on {{localMode}} in {{account}} → {{models}}.",
+      "createCloudOrLocal": "Create an account to use {{feature}} with cloud processing, or turn on {{localMode}} in {{account}} → {{models}}.",
+      "signInCloudOnly": "Sign in to use {{feature}}. This feature always uses cloud AI, even in {{localMode}}.",
+      "createCloudOnly": "Create an account to use {{feature}}. This feature always uses cloud AI, even in {{localMode}}.",
+      "cloudTranscription": "cloud transcription",
+      "cloudCleanup": "cloud cleanup",
+      "aiActions": "AI actions",
+      "aiChat": "AI chat"
     }
   }
 }

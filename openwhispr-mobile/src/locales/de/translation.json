@@ -827,6 +827,24 @@
       "invalidResponse": "Der Anbieter hat eine ungültige oder leere Antwort zurückgegeben.",
       "truncatedResponse": "Der Anbieter hat vorzeitig gestoppt. Versuche ein Modell mit höherem Ausgabelimit.",
       "providerUnsupported": "Dieser Anbieter ist auf diesem Gerät nicht verfügbar."
+    },
+    "workflowAlerts": {
+      "unavailableTitle": "Verarbeitung auf dem Gerät nicht verfügbar",
+      "readinessFailed": "Das lokale Modell kann gerade nicht geprüft werden. Versuche es erneut.",
+      "speechUnavailable": "Die lokale Transkription ist auf diesem Gerät nicht verfügbar.",
+      "signInRequired": "Anmeldung erforderlich",
+      "createAccount": "Konto erstellen",
+      "createAccountAction": "Konto erstellen",
+      "signInCloud": "Melde dich an, um {{feature}} mit Cloud-Verarbeitung zu nutzen.",
+      "createCloud": "Erstelle ein Konto, um {{feature}} mit Cloud-Verarbeitung zu nutzen.",
+      "signInCloudOrLocal": "Melde dich an, um {{feature}} mit Cloud-Verarbeitung zu nutzen, oder aktiviere {{localMode}} unter {{account}} → {{models}}.",
+      "createCloudOrLocal": "Erstelle ein Konto, um {{feature}} mit Cloud-Verarbeitung zu nutzen, oder aktiviere {{localMode}} unter {{account}} → {{models}}.",
+      "signInCloudOnly": "Melde dich an, um {{feature}} zu nutzen. Diese Funktion verwendet immer Cloud-KI, auch im {{localMode}}.",
+      "createCloudOnly": "Erstelle ein Konto, um {{feature}} zu nutzen. Diese Funktion verwendet immer Cloud-KI, auch im {{localMode}}.",
+      "cloudTranscription": "Cloud-Transkription",
+      "cloudCleanup": "Cloud-Textbereinigung",
+      "aiActions": "KI-Aktionen",
+      "aiChat": "KI-Chat"
     }
   }
 }

@@ -827,6 +827,24 @@
       "invalidResponse": "服务商返回了无效或空的响应。",
       "truncatedResponse": "服务商在完成前停止了处理。请尝试输出上限更高的模型。",
       "providerUnsupported": "此设备无法使用该服务商。"
+    },
+    "workflowAlerts": {
+      "unavailableTitle": "设备端处理不可用",
+      "readinessFailed": "暂时无法检查本地模型。请重试。",
+      "speechUnavailable": "此设备无法使用本地转录。",
+      "signInRequired": "需要登录",
+      "createAccount": "创建账号",
+      "createAccountAction": "创建账号",
+      "signInCloud": "请登录以使用云端处理的{{feature}}功能。",
+      "createCloud": "请创建账号以使用云端处理的{{feature}}功能。",
+      "signInCloudOrLocal": "请登录以使用云端处理的{{feature}}功能，或在{{account}} → {{models}}中开启{{localMode}}。",
+      "createCloudOrLocal": "请创建账号以使用云端处理的{{feature}}功能，或在{{account}} → {{models}}中开启{{localMode}}。",
+      "signInCloudOnly": "请登录以使用{{feature}}。此功能始终使用云端 AI，即使在{{localMode}}下也是如此。",
+      "createCloudOnly": "请创建账号以使用{{feature}}。此功能始终使用云端 AI，即使在{{localMode}}下也是如此。",
+      "cloudTranscription": "云端转录",
+      "cloudCleanup": "云端文本润色",
+      "aiActions": "AI 操作",
+      "aiChat": "AI 聊天"
     }
   }
 }

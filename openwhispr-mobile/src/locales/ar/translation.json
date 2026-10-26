@@ -827,6 +827,24 @@
       "invalidResponse": "أعاد الموفّر ردًا غير صالح أو فارغًا.",
       "truncatedResponse": "توقف الموفّر قبل الإكمال. جرّب نموذجًا بحد إخراج أكبر.",
       "providerUnsupported": "هذا الموفّر غير متاح على هذا الجهاز."
+    },
+    "workflowAlerts": {
+      "unavailableTitle": "المعالجة على الجهاز غير متاحة",
+      "readinessFailed": "تعذّر التحقق من النموذج المحلي الآن. حاول مرة أخرى.",
+      "speechUnavailable": "التفريغ الصوتي على الجهاز غير متاح على هذا الجهاز.",
+      "signInRequired": "يلزم تسجيل الدخول",
+      "createAccount": "إنشاء حساب",
+      "createAccountAction": "إنشاء حساب",
+      "signInCloud": "سجّل الدخول لاستخدام {{feature}} مع المعالجة السحابية.",
+      "createCloud": "أنشئ حسابًا لاستخدام {{feature}} مع المعالجة السحابية.",
+      "signInCloudOrLocal": "سجّل الدخول لاستخدام {{feature}} مع المعالجة السحابية، أو فعّل {{localMode}} في {{account}} ← {{models}}.",
+      "createCloudOrLocal": "أنشئ حسابًا لاستخدام {{feature}} مع المعالجة السحابية، أو فعّل {{localMode}} في {{account}} ← {{models}}.",
+      "signInCloudOnly": "سجّل الدخول لاستخدام {{feature}}. تستخدم هذه الميزة الذكاء الاصطناعي السحابي دائمًا، حتى في {{localMode}}.",
+      "createCloudOnly": "أنشئ حسابًا لاستخدام {{feature}}. تستخدم هذه الميزة الذكاء الاصطناعي السحابي دائمًا، حتى في {{localMode}}.",
+      "cloudTranscription": "التفريغ الصوتي السحابي",
+      "cloudCleanup": "تنقيح النص السحابي",
+      "aiActions": "إجراءات الذكاء الاصطناعي",
+      "aiChat": "الدردشة بالذكاء الاصطناعي"
     }
   }
 }
