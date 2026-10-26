@@ -100,3 +100,12 @@ test("the account's own Personal wins over a device-owned one", async () => {
   assert.equal(findDefaultFolder([userFolder, legacy]), legacy);
   assert.equal(findDefaultFolder([userFolder]), undefined);
 });
+
+test("the account's own Videos wins over a device-owned one", async () => {
+  const { findVideosFolder } = await load();
+  const legacy = { id: 1, name: "Videos", is_default: 1, account_id: null };
+  const own = { id: 7, name: "Videos", is_default: 1, account_id: "account-b" };
+
+  assert.equal(findVideosFolder([legacy, own]), own);
+  assert.equal(findVideosFolder([legacy]), legacy);
+});

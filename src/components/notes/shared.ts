@@ -44,7 +44,8 @@ export function findDefaultFolder(folders: FolderItem[]): FolderItem | undefined
 // URL downloads route to "Videos" by name: a pre-existing user-created folder with
 // that name is used as-is (the migration never promotes or replaces it).
 export function findVideosFolder(folders: FolderItem[]): FolderItem | undefined {
-  return folders.find((f) => f.name === VIDEOS_FOLDER_NAME);
+  const videos = folders.filter((f) => f.name === VIDEOS_FOLDER_NAME);
+  return videos.find((f) => f.account_id) ?? videos[0];
 }
 
 // URL-download error codes → notes.upload.* i18n keys.

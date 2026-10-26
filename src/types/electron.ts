@@ -3681,6 +3681,7 @@ declare global {
         snapshot: FolderPushSnapshot,
         expectedCloudId: string
       ) => Promise<FolderAckResult>;
+      ensureAccountDefaultFolders?: (foreignCloudIds: string[]) => Promise<void>;
       getFolderIdMap?: () => Promise<FolderItem[]>;
       getPendingFolderDeletes?: () => Promise<FolderItem[]>;
       restoreFolderAfterDeniedDelete?: (id: number) => Promise<{

@@ -1878,6 +1878,14 @@ function pullOwnDefaults(db, accountId) {
   );
 }
 
+function folderOf(db, accountId, name) {
+  return db.db
+    .prepare(
+      "SELECT * FROM folders WHERE name = ? AND is_default = 1 AND account_id IS ? AND deleted_at IS NULL"
+    )
+    .get(name, accountId);
+}
+
 function visibleDefaults(db) {
   return db
     .getFolders()
@@ -2022,20 +2030,20 @@ test("launch repair attributes legacy rows already bound to an account's cloud",
     )
     .run(privateId).lastInsertRowid;
 
-  // initDatabase runs this on every launch. It's called directly because
-  // relaunching this shape needs #2926 (the stale idx_folders_space_name).
-  const reopened = db;
-  reopened.setActiveAccountId(null);
-  reopened._repairCloudBoundLegacyRows();
+  // The next launch runs the repair.
+  db.db.close();
+  const reopened = new DatabaseManager();
+  t.after(() => reopened.db.close());
   const accountOf = (table, id) =>
     reopened.db.prepare(`SELECT account_id FROM ${table} WHERE id = ?`).get(id).account_id;
 
-  assert.equal(accountOf("folders", seeded.Personal), "account-a");
-  assert.equal(accountOf("folders", seeded.Meetings), "account-a");
-  assert.equal(accountOf("folders", seeded.Videos), "account-a");
+  assert.equal(accountOf("folders", seeded.Personal), "account-a", "A's synced note proves it");
+  // No synced note proves who owns these; A's next folder pull claims them.
+  assert.equal(accountOf("folders", seeded.Meetings), null);
+  assert.equal(accountOf("folders", seeded.Videos), null);
   assert.equal(accountOf("folders", work), null, "no evidence names Work's owner");
   assert.equal(accountOf("notes", legacyA), "account-a");
-  assert.equal(accountOf("notes", unpushed), null, "an unpushed note stays device-owned");
+  assert.equal(accountOf("notes", unpushed), "account-a", "an unpushed note follows its folder");
 
   const personalB = reopened.db
     .prepare("SELECT id FROM folders WHERE name = 'Personal' AND account_id = 'account-b'")
@@ -2047,8 +2055,10 @@ test("launch repair attributes legacy rows already bound to an account's cloud",
   reopened.setActiveAccountId("account-b");
   assert.deepEqual(visibleDefaults(reopened), [
     "Meetings:account-b",
+    "Meetings:null",
     "Personal:account-b",
     "Videos:account-b",
+    "Videos:null",
   ]);
 
   // Idempotent: a second launch changes nothing.
@@ -2070,13 +2080,18 @@ test("deleting an account releases device-owned notes from its folders", (t) => 
   const db = createDb(t);
   if (!db) return;
 
-  db.setActiveAccountId(null);
-  const guest = db.saveNote("Guest note", "", "personal").note;
   adoptSeededDefaults(db, "account-a");
   const personalA = db.db
     .prepare("SELECT id FROM folders WHERE name = 'Personal' AND account_id = 'account-a'")
     .get().id;
-  assert.equal(guest.folder_id, personalA);
+  // Left by a build that claimed the folder but not the notes inside it.
+  const guest = {
+    id: db.db
+      .prepare(
+        "INSERT INTO notes (title, content, folder_id, space_id, client_note_id) VALUES ('Guest note', '', ?, ?, 'guest-client')"
+      )
+      .run(personalA, db.getPrivateSpaceId()).lastInsertRowid,
+  };
 
   const result = db.deleteAccountData("account-a");
   assert.deepEqual(result.deletedFolderIds.includes(personalA), true);
@@ -2092,18 +2107,23 @@ test("a revoked team folder kept in Personal belongs to the active account", (t)
   db.saveNote("Draft", "", "personal", null, null, folder.id);
   db.markFolderSynced(folder.id, "team-folder-cloud");
   const privateId = db.getPrivateSpaceId();
-  // Another account's same-named private folder is not a collision.
+  // Another account's and a device-owned same-named folder both force a rename.
   db.db
     .prepare(
-      "INSERT INTO folders (name, space_id, account_id, client_folder_id) VALUES ('Shared', ?, 'other-account', 'other-shared')"
+      "INSERT INTO folders (name, space_id, account_id, client_folder_id) VALUES ('Shared', ?, 'other-account', 'other-shared'), ('Shared (2)', ?, NULL, 'device-shared')"
     )
-    .run(privateId);
+    .run(privateId, privateId);
 
   const relocation = db.relocateRevokedFolder(folder.id, privateId, true);
   assert.equal(relocation.success, true);
-  assert.equal(relocation.folder.name, "Shared");
+  assert.equal(relocation.folder.name, "Shared (3)");
   assert.equal(relocation.folder.account_id, "test-account");
   assert.ok(relocation.relocatedNotes.every((note) => note.account_id === "test-account"));
+
+  db.db.close();
+  const reopened = new DatabaseManager();
+  t.after(() => reopened.db.close());
+  assert.ok(reopened.getPrivateSpaceId());
 });
 
 test("a failing legacy-row repair never stops the database from opening", (t) => {
@@ -2124,7 +2144,7 @@ test("a failing legacy-row repair never stops the database from opening", (t) =>
   assert.ok(reopened.getFolders().some((folder) => folder.name === "Personal"));
 });
 
-test("launch repair gives a default to its adopter even when only another account's notes sit in it", (t) => {
+test("launch repair moves a note out of a legacy default its account has its own copy of", (t) => {
   const db = createDb(t);
   if (!db) return;
   const privateId = db.getPrivateSpaceId();
@@ -2147,9 +2167,10 @@ test("launch repair gives a default to its adopter even when only another accoun
   db.setActiveAccountId(null);
   db._repairCloudBoundLegacyRows();
 
+  // B's note can't prove the folder is A's, and B already has its own Meetings.
   assert.equal(
     db.db.prepare("SELECT account_id FROM folders WHERE id = ?").get(legacyMeetings).account_id,
-    "account-a"
+    null
   );
   assert.equal(
     db.db.prepare("SELECT folder_id FROM notes WHERE title = 'B meeting'").get().folder_id,
@@ -2157,4 +2178,195 @@ test("launch repair gives a default to its adopter even when only another accoun
       .prepare("SELECT id FROM folders WHERE name = 'Meetings' AND account_id = 'account-b'")
       .get().id
   );
+});
+
+test("every scope gets default folders it can see, and signed-out ones fold into the account's", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  const folderCount = () => db.db.prepare("SELECT COUNT(*) AS count FROM folders").get().count;
+
+  // The first account to sign in takes the device's seeded defaults.
+  db.setActiveAccountId("account-a");
+  const seededCount = folderCount();
+  db.ensureAccountDefaultFolders();
+  assert.equal(folderCount(), seededCount);
+  assert.deepEqual(visibleDefaults(db), [
+    "Meetings:account-a",
+    "Personal:account-a",
+    "Videos:account-a",
+  ]);
+
+  // A second account gets its own unlinked set for its first sync to adopt.
+  db.setActiveAccountId("account-b");
+  db.ensureAccountDefaultFolders();
+  assert.deepEqual(visibleDefaults(db), [
+    "Meetings:account-b",
+    "Personal:account-b",
+    "Videos:account-b",
+  ]);
+  assert.ok(db.getPendingFolders("private").every((folder) => !folder.cloud_id));
+
+  // Signed out, the device gets its own set again.
+  db.setActiveAccountId(null);
+  db.ensureAccountDefaultFolders();
+  assert.deepEqual(visibleDefaults(db), ["Meetings:null", "Personal:null", "Videos:null"]);
+  const guestNote = db.saveNote("Guest note", "", "personal").note;
+  assert.ok(db.getMeetingsFolder());
+
+  // Back in A, the signed-out defaults fold into A's own, notes included.
+  db.setActiveAccountId("account-a");
+  db.ensureAccountDefaultFolders();
+  assert.deepEqual(visibleDefaults(db), [
+    "Meetings:account-a",
+    "Personal:account-a",
+    "Videos:account-a",
+  ]);
+  const moved = db.getNote(guestNote.id);
+  assert.equal(moved.account_id, "account-a");
+  assert.equal(moved.folder_id, folderOf(db, "account-a", "Personal").id);
+  assert.equal(moved.sync_status, "pending");
+
+  const settledCount = folderCount();
+  db.ensureAccountDefaultFolders();
+  assert.equal(folderCount(), settledCount, "a second pass changes nothing");
+
+  db.db.close();
+  const reopened = new DatabaseManager();
+  t.after(() => reopened.db.close());
+  assert.ok(reopened.getPrivateSpaceId());
+});
+
+test("an account signing in after a sign-out takes the signed-out defaults rather than sharing them", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  db.setActiveAccountId("account-a");
+  db.ensureAccountDefaultFolders();
+  db.setActiveAccountId(null);
+  db.ensureAccountDefaultFolders();
+  const guestNote = db.saveNote("Guest note", "", "personal").note;
+
+  // B (backup off, so nothing binds them) takes the signed-out set.
+  db.setActiveAccountId("account-b");
+  db.ensureAccountDefaultFolders();
+  assert.deepEqual(visibleDefaults(db), [
+    "Meetings:account-b",
+    "Personal:account-b",
+    "Videos:account-b",
+  ]);
+  assert.equal(db.getNote(guestNote.id).account_id, "account-b");
+  db.saveNote("B note", "", "personal");
+
+  db.setActiveAccountId("account-a");
+  db.ensureAccountDefaultFolders();
+  assert.deepEqual(visibleDefaults(db), [
+    "Meetings:account-a",
+    "Personal:account-a",
+    "Videos:account-a",
+  ]);
+});
+
+test("a device-owned default still holding another account's notes is shared, never taken", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  // A build that left the seeded defaults device-owned, used by two accounts
+  // with backup off.
+  db.setActiveAccountId("account-a");
+  db.saveNote("A note", "", "personal");
+  db.setActiveAccountId("account-b");
+  db.ensureAccountDefaultFolders();
+  assert.ok(visibleDefaults(db).includes("Personal:null"));
+  assert.ok(visibleDefaults(db).includes("Meetings:account-b"));
+  assert.equal(
+    db.saveNote("B note", "", "personal").note.folder_id,
+    folderOf(db, null, "Personal").id
+  );
+});
+
+test("a folder claimed for an account takes the device-owned notes inside it", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+
+  db.setActiveAccountId(null);
+  const guestNote = db.saveNote("Guest note", "", "personal").note;
+  adoptSeededDefaults(db, "account-a");
+  assert.equal(db.getNote(guestNote.id).account_id, "account-a");
+
+  db.setActiveAccountId("account-b");
+  assert.equal(db.getNote(guestNote.id), null);
+});
+
+test("a pulled folder claims a legacy row bound to it and the notes inside", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  const personal = folderOf(db, null, "Personal");
+  db.db
+    .prepare(
+      "UPDATE folders SET client_folder_id = 'a-personal-client', cloud_id = 'a-personal-cloud', sync_status = 'synced' WHERE id = ?"
+    )
+    .run(personal.id);
+  db.setActiveAccountId(null);
+  const guestNote = db.saveNote("Guest note", "", "personal").note;
+
+  db.setActiveAccountId("account-a");
+  db.upsertFolderFromCloud({
+    id: "a-personal-cloud",
+    client_folder_id: "a-personal-client",
+    name: "Personal",
+    is_default: true,
+    sort_order: 0,
+    created_at: "2026-10-01T00:00:00.000Z",
+    updated_at: "2026-10-01T00:00:00.000Z",
+  });
+
+  assert.equal(folderOf(db, "account-a", "Personal").id, personal.id);
+  assert.equal(db.getNote(guestNote.id).account_id, "account-a");
+});
+
+test("launch repair names a folder's owner only from synced, live notes", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  const privateId = db.getPrivateSpaceId();
+  db.db
+    .prepare(
+      "UPDATE folders SET cloud_id = 'a-' || name, sync_status = 'synced' WHERE is_default = 1 AND account_id IS NULL"
+    )
+    .run();
+  const work = db.db
+    .prepare(
+      "INSERT INTO folders (name, space_id, client_folder_id, cloud_id, sync_status) VALUES ('Work', ?, 'work-client', 'a-work-cloud', 'synced')"
+    )
+    .run(privateId).lastInsertRowid;
+  const archive = db.db
+    .prepare(
+      "INSERT INTO folders (name, space_id, client_folder_id, cloud_id, sync_status) VALUES ('Archive', ?, 'archive-client', 'a-archive-cloud', 'synced')"
+    )
+    .run(privateId).lastInsertRowid;
+  db.db
+    .prepare(
+      "INSERT INTO folders (name, space_id, account_id, client_folder_id) VALUES ('Archive', ?, 'account-b', 'b-archive-client')"
+    )
+    .run(privateId);
+  const insertNote = db.db.prepare(
+    `INSERT INTO notes (title, content, folder_id, space_id, client_note_id, cloud_id, account_id, sync_status, deleted_at)
+     VALUES (?, '', ?, ?, ?, ?, ?, ?, ?)`
+  );
+  // B only ever saw these folders; its pushes into them were rejected.
+  insertNote.run("B in Work", work, privateId, "n1", null, "account-b", "error", null);
+  insertNote.run("B trashed", archive, privateId, "n2", "c2", "account-b", "synced", "2026-10-01");
+  // B's notes elsewhere make B the only account known on the device.
+  insertNote.run("B elsewhere", null, privateId, "n3", "c3", "account-b", "synced", null);
+
+  db.setActiveAccountId(null);
+  db._repairCloudBoundLegacyRows();
+  const accountOf = (id) =>
+    db.db.prepare("SELECT account_id FROM folders WHERE id = ?").get(id).account_id;
+
+  assert.equal(accountOf(work), null);
+  assert.equal(accountOf(archive), null);
+  for (const name of ["Personal", "Meetings", "Videos"]) {
+    assert.equal(folderOf(db, null, name)?.cloud_id, `a-${name}`, `${name} stays unclaimed`);
+  }
+  const trashed = db.db.prepare("SELECT * FROM notes WHERE title = 'B trashed'").get();
+  assert.equal(trashed.folder_id, archive, "a trashed note is never re-homed");
+  assert.equal(trashed.sync_status, "synced");
 });
