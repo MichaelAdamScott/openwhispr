@@ -1,5 +1,5 @@
 import type { ChatNoteWindow, GoogleCalendarEvent, Note } from '@/data';
-import { boundChatContext, formatChatHistory } from '@/lib/notes/chatOverNote';
+import { boundChatContext, formatChatHistory, truncateChatText } from '@/lib/notes/chatOverNote';
 import { isDeclinedByUser } from '@/lib/calendar/meetingContext';
 import { isRegenerableNoteTitle } from '@/lib/notes/regenerableNoteTitle';
 import { tryParseNoteTimestamp } from '@/lib/parseNoteTimestamp';
@@ -9,7 +9,6 @@ import type { ChatMessage, ChatSource } from './types';
 export const CHAT_NOTE_CHAR_BUDGET = 18_000;
 export const CHAT_NOTE_CHAR_CAP = 6_000;
 
-const CALENDAR_WINDOW_MS = 48 * 60 * 60 * 1000;
 const NOTE_CUT_MARKER = '\n\n[...rest of the note omitted...]';
 // A note found through its transcript carries the lines that matched, within its own cap.
 const TRANSCRIPT_PASSAGES_CHAR_CAP = 1_500;
@@ -417,6 +416,9 @@ export interface ChatPayloadInput {
   calendar: ChatCalendar;
   now: Date;
   noteCharBudget?: number;
+  noteCharCap?: number;
+  calendarCharBudget?: number;
+  calendarWindowHours?: number;
   /**
    * Transcripts by note id: a note with no text or summary of its own is sent as its transcript,
    * and any other note with the lines of it that match the question.
@@ -621,8 +623,11 @@ const toCalendarEntry = (
 };
 
 /** Whether an event belongs in the request's calendar section: not ended and starting within 48 hours. */
-export const isInChatCalendarWindow = (event: GoogleCalendarEvent, now: Date): boolean =>
-  toCalendarEntry(event, now, now.getTime() + CALENDAR_WINDOW_MS) !== null;
+export const isInChatCalendarWindow = (
+  event: GoogleCalendarEvent,
+  now: Date,
+  windowHours = 48,
+): boolean => toCalendarEntry(event, now, now.getTime() + windowHours * 60 * 60 * 1000) !== null;
 
 const formatCalendarDay = (day: Date, now: Date): string => {
   if (isSameLocalDay(day, now)) return 'Today';
@@ -638,22 +643,51 @@ const formatCalendarLine = ({ event, day, start, end }: CalendarEntry, now: Date
   return `- ${summary} · ${dayLabel}${formatChatTime(start)}–${formatChatTime(end)}`;
 };
 
-const formatCalendarSection = (calendar: ChatCalendar, now: Date): string => {
+const formatCalendarSection = (
+  calendar: ChatCalendar,
+  now: Date,
+  windowHours: number,
+  charBudget: number,
+): string => {
   if (calendar === null) return 'No calendar connected.';
   if (calendar === 'unavailable') return 'Calendar unavailable right now.';
 
-  const windowEnd = now.getTime() + CALENDAR_WINDOW_MS;
+  const windowEnd = now.getTime() + windowHours * 60 * 60 * 1000;
   // A declined invite isn't on the user's schedule.
   const lines = calendar
     .filter((event) => !isDeclinedByUser(event))
     .map((event) => toCalendarEntry(event, now, windowEnd))
     .filter((entry): entry is CalendarEntry => entry !== null)
     .sort((a, b) => a.sortTime - b.sortTime)
-    .map((entry) => formatCalendarLine(entry, now));
+    .map((entry) =>
+      formatCalendarLine(
+        {
+          ...entry,
+          event: {
+            ...entry.event,
+            summary: Number.isFinite(charBudget)
+              ? truncateChatText(entry.event.summary ?? '', 160)
+              : entry.event.summary,
+          },
+        },
+        now,
+      ),
+    );
 
-  return lines.length > 0
-    ? fenced('calendar', lines.join('\n'))
-    : 'No meetings in the next 48 hours.';
+  if (lines.length === 0)
+    return `No meetings in the next ${windowHours === 48 ? '48 hours' : '7 days'}.`;
+  const included: string[] = [];
+  let remaining = charBudget;
+  for (const line of lines) {
+    if (line.length + 1 > remaining) break;
+    included.push(line);
+    remaining -= line.length + 1;
+  }
+  if (included.length < lines.length)
+    included.push(
+      `[${lines.length - included.length} more events omitted to fit context; this is not the full schedule.]`,
+    );
+  return fenced('calendar', included.join('\n'));
 };
 
 const formatNoteText = (note: Note): string => {
@@ -743,21 +777,23 @@ const formatNoteBody = (note: Note, transcript: string | undefined, terms: strin
     return `${passagesBlock}\n\n${boundChatContext(transcript ?? '', room).text}`;
   }
   const passages = transcript ? findTranscriptPassages(transcript, terms) : '';
-  if (!passages) return formatNoteText(note).slice(0, CHAT_NOTE_CHAR_CAP);
+  if (!passages) return truncateChatText(formatNoteText(note), CHAT_NOTE_CHAR_CAP);
 
   const passagesBlock = `${PASSAGES_HEADING}\n${passages}`;
   const generated = note.enhancedContent?.trim();
   const source = note.content.trim();
   const room = CHAT_NOTE_CHAR_CAP - passagesBlock.length - 2;
   // The passages lead, so a note cut to fit a tight budget keeps the lines it was found by.
-  return [
-    passagesBlock,
-    generated ? `Generated notes:\n${generated}`.slice(0, room) : '',
-    source ? `Note content:\n${source}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
-    .slice(0, CHAT_NOTE_CHAR_CAP);
+  return truncateChatText(
+    [
+      passagesBlock,
+      generated ? truncateChatText(`Generated notes:\n${generated}`, room) : '',
+      source ? `Note content:\n${source}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    CHAT_NOTE_CHAR_CAP,
+  );
 };
 
 // A period holds the notes made in it, so they say when they were made.
@@ -784,6 +820,7 @@ const formatNotesHeading = (
 const formatNotesSection = (
   notes: Note[],
   budget: number,
+  noteCharCap: number,
   transcripts: ReadonlyMap<number, string> | undefined,
   terms: string[],
   period: ChatNotesPeriod | undefined,
@@ -795,7 +832,11 @@ const formatNotesSection = (
   let remaining = budget;
 
   for (const note of notes) {
-    const body = withoutFenceTags(formatNoteBody(note, transcripts?.get(note.id), terms));
+    const formatted = withoutFenceTags(formatNoteBody(note, transcripts?.get(note.id), terms));
+    const body =
+      formatted.length > noteCharCap
+        ? `${truncateChatText(formatted, noteCharCap - NOTE_CUT_MARKER.length)}${NOTE_CUT_MARKER}`
+        : formatted;
     // A note with nothing to read (a failed recording) would be sent and listed as read for nothing.
     if (!body) continue;
     // The top note is cut to fit rather than dropped, so a tight budget still sends one note. Any
@@ -803,7 +844,7 @@ const formatNotesSection = (
     let included = body;
     if (body.length > remaining) {
       if (blocks.length > 0 || remaining <= NOTE_CUT_MARKER.length) continue;
-      included = `${body.slice(0, remaining - NOTE_CUT_MARKER.length).trimEnd()}${NOTE_CUT_MARKER}`;
+      included = `${truncateChatText(body, remaining - NOTE_CUT_MARKER.length).trimEnd()}${NOTE_CUT_MARKER}`;
     }
 
     const title = note.title.trim() || 'Untitled';
@@ -827,6 +868,9 @@ export const buildChatPayload = (input: ChatPayloadInput): ChatPayload => {
     calendar,
     now,
     noteCharBudget = CHAT_NOTE_CHAR_BUDGET,
+    noteCharCap = CHAT_NOTE_CHAR_CAP,
+    calendarCharBudget = Infinity,
+    calendarWindowHours = 48,
     transcripts,
     period,
     followUp,
@@ -844,6 +888,7 @@ export const buildChatPayload = (input: ChatPayloadInput): ChatPayload => {
   const { section: notesSection, sources } = formatNotesSection(
     notes,
     noteCharBudget,
+    noteCharCap,
     transcripts,
     followUp?.terms ?? terms,
     period,
@@ -853,7 +898,7 @@ export const buildChatPayload = (input: ChatPayloadInput): ChatPayload => {
 
   const text = [
     `TODAY:\n${today}`,
-    `CALENDAR (next 48 hours):\n${formatCalendarSection(calendar, now)}`,
+    `CALENDAR (next ${calendarWindowHours === 48 ? '48 hours' : '7 days'}):\n${formatCalendarSection(calendar, now, calendarWindowHours, calendarCharBudget)}`,
     notesSection,
     `RECENT CHAT:\n${formatChatHistory(withoutSourceLines(history))}`,
     `USER QUESTION:\n${question.trim()}`,

@@ -11,7 +11,6 @@ import { tryParseNoteTimestamp } from '@/lib/parseNoteTimestamp';
 import { abortError } from '@/services/providers/NativeProviderTransport';
 import type { ReasoningResponse, ReasoningRoutingOptions } from '@/types';
 import {
-  buildChatPayload,
   countPeriodNotes,
   formatChatTime,
   isInChatCalendarWindow,
@@ -27,16 +26,10 @@ import {
 } from './chatContext';
 import { ChatEmptyAnswerError, ChatNotesReadError } from './chatErrorMessage';
 import type { ChatMessage, ChatSource, ChatStep, ChatStepId } from './types';
+import { buildBudgetedChatPayload, resolveChatBudget } from './chatBudget';
 
-const MAX_MATCHED_NOTES = 4;
-// A note found can be empty (a failed recording matching by title, or made in the period asked
-// about), so a few spares are read to take its place.
-const MATCH_POOL = MAX_MATCHED_NOTES * 2;
 const NO_NOTES: ChatCandidateNotes = { notes: [], total: 0 };
 const CONTEXT_LIMIT_NOTE_CHAR_BUDGET = 3_000;
-// The read spans the day looked back as well as the 48 hours sent, so 72 hours share it: about 16
-// events a day, more than a busy calendar holds, so tomorrow isn't pushed out of the request.
-const CHAT_CALENDAR_EVENT_LIMIT = 50;
 // An all-day event is stored as UTC midnight to UTC midnight, so west of UTC today's ends before
 // the local day does. A day's lookback keeps it; chatContext drops the events that have ended.
 const CHAT_CALENDAR_LOOKBACK_MS = 24 * 60 * 60 * 1000;
@@ -125,7 +118,9 @@ export const createDefaultChatTurnDeps = (): ChatTurnDeps => ({
       accounts,
       calendarRepository,
       now,
-      CHAT_CALENDAR_EVENT_LIMIT,
+      // The repository already reads the bounded seven-day cache. Limit the formatted
+      // prompt instead, so later events aren't silently lost before omissions are counted.
+      Infinity,
       CHAT_CALENDAR_LOOKBACK_MS,
     );
   },
@@ -208,8 +203,12 @@ const readEvents = (
   }
 };
 
-const describeNextEvent = (events: GoogleCalendarEvent[], now: Date): string => {
-  const next = events.find((event) => isInChatCalendarWindow(event, now));
+const describeNextEvent = (
+  events: GoogleCalendarEvent[],
+  now: Date,
+  windowHours: number,
+): string => {
+  const next = events.find((event) => isInChatCalendarWindow(event, now, windowHours));
   if (!next) return 'No meetings coming up';
 
   const summary = next.summary?.trim() || 'Untitled meeting';
@@ -326,6 +325,18 @@ export async function runChatTurn(
   // Read once, so the notes picked for this route and the route that receives them can't diverge.
   const selection = deps.getChatSelection();
   const inferenceRoute = toChatRoute(selection);
+  const query = parseChatQuery(question, now);
+  const budget = await resolveChatBudget(inferenceRoute, !!query.scope && query.terms.length === 0);
+  throwIfAborted(signal);
+  const maxNotes = budget?.maxNotes ?? 4;
+  // Spare candidates let empty recordings be skipped without losing useful matches.
+  const matchPool = maxNotes * 2;
+  const calendarWindowHours =
+    inferenceRoute.mode !== 'providers' &&
+    /\b(?:calendar|schedule|meetings?|busy|free)\b/i.test(question) &&
+    /\b(?:(?:this|next|coming)\s+week|next\s+(?:7|seven)\s+days)\b/i.test(question)
+      ? 168
+      : 48;
   const includePrivate = selection?.mode === 'local';
   // The repository already filters private notes; this keeps them out whatever it returns.
   const allowed = (notes: Note[]): Note[] =>
@@ -349,7 +360,7 @@ export async function runChatTurn(
         id: 'calendar',
         status: 'done',
         label: 'Checked your calendar',
-        detail: describeNextEvent(events, now),
+        detail: describeNextEvent(events, now, calendarWindowHours),
       });
     }
     throwIfAborted(signal);
@@ -372,7 +383,7 @@ export async function runChatTurn(
   const pick = (candidates: Note[]): Note[] => {
     const picked: Note[] = [];
     for (const note of allowed(candidates)) {
-      if (picked.length >= MAX_MATCHED_NOTES) break;
+      if (picked.length >= maxNotes) break;
       if (hasContent(note)) picked.push(note);
     }
     return picked;
@@ -386,7 +397,6 @@ export async function runChatTurn(
   // Only notes whose words match, or that were made in the period the question names, are sent: a
   // question about something else gets no notes rather than unrelated ones.
   const found = readNotes((): FoundNotes => {
-    const query = parseChatQuery(question, now);
     const followUp = query.terms.length === 0 && !query.scope ? findFollowUp(history, now) : null;
     const carried = followUp ? pick(readAgain(followUp.noteIds)) : [];
     if (followUp && carried.length > 0) {
@@ -400,7 +410,7 @@ export async function runChatTurn(
       (terms, window) => {
         const candidates = deps.getCandidateNotes(terms, {
           includePrivate,
-          limit: MATCH_POOL,
+          limit: matchPool,
           window,
         });
         candidates.transcriptMatchIds?.forEach((id) => transcriptMatches.add(id));
@@ -431,19 +441,25 @@ export async function runChatTurn(
   const buildPayload = (
     payloadNotes: Note[],
     options: { noteCharBudget?: number; history: ChatMessage[] },
-  ): ChatPayload =>
-    buildChatPayload({
-      question,
-      notes: payloadNotes,
-      calendar,
-      now,
-      transcripts,
-      period: found.period ?? undefined,
-      followUp: found.followUp,
-      ...options,
-    });
+  ): Promise<ChatPayload> =>
+    buildBudgetedChatPayload(
+      {
+        question,
+        notes: payloadNotes,
+        calendar,
+        calendarWindowHours,
+        now,
+        transcripts,
+        period: found.period ?? undefined,
+        followUp: found.followUp,
+        ...options,
+      },
+      budget,
+      signal,
+    );
 
-  let payload = buildPayload(notes, { history });
+  let payload = await buildPayload(notes, { history });
+  throwIfAborted(signal);
   if (payload.sources.length > 0) {
     const reading = describeReading(payload.sources);
     setStep({ id: 'read', status: 'active', label: reading.active });
@@ -473,12 +489,13 @@ export async function runChatTurn(
     response = await send(payload);
   } catch (error) {
     if (!isLocalContextLimitError(error)) throw error;
-    // History is uncapped in length, so a long chat would overflow on every retry. A retry that
-    // cuts nothing would fail the same way.
-    const retryPayload = buildPayload(notes.slice(0, 1), {
+    // Token estimates can still miss native overhead. Retry once with a smaller payload;
+    // a retry that cuts nothing would fail the same way.
+    const retryPayload = await buildPayload(notes.slice(0, 1), {
       noteCharBudget: CONTEXT_LIMIT_NOTE_CHAR_BUDGET,
       history: [],
     });
+    throwIfAborted(signal);
     if (retryPayload.text === payload.text) throw error;
     payload = retryPayload;
     // The first payload always reads at least the note the retry keeps, so the read step is

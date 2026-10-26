@@ -75,6 +75,13 @@ interface BoundedContext {
   truncated: boolean;
 }
 
+// JavaScript slices UTF-16 code units, so a boundary can otherwise leave half an emoji.
+export const truncateChatText = (text: string, maxChars: number): string => {
+  const clipped = text.slice(0, Math.max(0, maxChars));
+  const last = clipped.charCodeAt(clipped.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? clipped.slice(0, -1) : clipped;
+};
+
 export const boundChatContext = (
   context: string,
   maxChars: number = MAX_CONTEXT_CHARS,
@@ -84,11 +91,12 @@ export const boundChatContext = (
     return { text: trimmed, truncated: false };
   }
 
-  const edgeChars = Math.floor(maxChars / 2);
+  const edgeChars = Math.max(0, Math.floor(maxChars / 2));
+  let tail = edgeChars > 0 ? trimmed.slice(-edgeChars) : '';
+  const first = tail.charCodeAt(0);
+  if (first >= 0xdc00 && first <= 0xdfff) tail = tail.slice(1);
   return {
-    text: `${trimmed.slice(0, edgeChars).trimEnd()}${TRUNCATION_MARKER}${trimmed
-      .slice(-edgeChars)
-      .trimStart()}`,
+    text: `${truncateChatText(trimmed, edgeChars).trimEnd()}${TRUNCATION_MARKER}${tail.trimStart()}`,
     truncated: true,
   };
 };

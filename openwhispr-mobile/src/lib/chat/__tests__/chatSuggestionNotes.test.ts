@@ -100,6 +100,25 @@ const chip = (label: string, events: GoogleCalendarEvent[] = [ACME_SYNC]): strin
 };
 
 describe('Chat root chips', () => {
+  it('includes twenty recent meeting summaries through the real SQLite search', async () => {
+    const { deps, ids, seed } = setUp();
+    const recent = Array.from({ length: 22 }, (_, index) =>
+      seed(
+        `Weekly meeting ${index + 1}`,
+        `Decision ${index + 1}: ship the agreed work.`,
+        new Date(2026, 9, 22, 8, index),
+        'meeting',
+      ),
+    );
+    const result = await sourcesFor('Summarize my meetings this week', deps);
+    expect(result).toEqual(recent.slice(2).reverse());
+    expect(result).not.toContain(ids.groceries);
+    expect(result).not.toContain(ids.acmeKickoff);
+    expect(result).not.toContain(ids.contractCall);
+    const request = jest.mocked(deps.chat).mock.calls[0][0];
+    expect(request.text).toContain('20 of 23 meetings from this week');
+  });
+
   it('summarizes only this week’s meetings', async () => {
     const { deps, ids } = setUp();
     expect(await sourcesFor(chip('Summarize my meetings this week'), deps)).toEqual([

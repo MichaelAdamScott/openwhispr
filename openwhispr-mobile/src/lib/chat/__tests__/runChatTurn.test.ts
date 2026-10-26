@@ -5,7 +5,11 @@ import type {
   GoogleCalendarEvent,
   Note,
 } from '@/data';
-import { LocalReasoningError } from '@/lib/localReasoning';
+import {
+  LocalReasoningError,
+  getLocalReasoningReadiness,
+  countLocalReasoningTokens,
+} from '@/lib/localReasoning';
 import { ChatEmptyAnswerError, ChatNotesReadError, toChatErrorMessage } from '../chatErrorMessage';
 import {
   createDefaultChatTurnDeps,
@@ -14,6 +18,12 @@ import {
   type ChatTurnInput,
 } from '../runChatTurn';
 import type { ChatMessage, ChatStep } from '../types';
+
+jest.mock('@/lib/localReasoning', () => ({
+  ...jest.requireActual('@/lib/localReasoning'),
+  getLocalReasoningReadiness: jest.fn(),
+  countLocalReasoningTokens: jest.fn(),
+}));
 
 const mockGetNoteById = jest.fn();
 const mockGetSegments = jest.fn();
@@ -120,6 +130,263 @@ const sentText = (chat: ChatTurnDeps['chat'], call = 0): string =>
   (chat as jest.Mock).mock.calls[call][0].text;
 
 describe('runChatTurn', () => {
+  beforeEach(() => {
+    jest
+      .mocked(getLocalReasoningReadiness)
+      .mockResolvedValue({ status: 'ready', contextSize: 4096, tokenCounting: true });
+    jest
+      .mocked(countLocalReasoningTokens)
+      .mockImplementation(async ({ instructions = '', prompt }) =>
+        Math.ceil((instructions.length + prompt.length) / 3),
+      );
+  });
+
+  it('fits the whole local prompt before sending while keeping the latest exchange', async () => {
+    const notes = Array.from({ length: 5 }, (_, index) =>
+      makeNote({
+        id: index + 1,
+        title: `Pricing ${index}`,
+        content: 'Evidence '.repeat(1500),
+      }),
+    );
+    const deps = makeDeps({
+      getChatSelection: LOCAL_SELECTION,
+      getCandidateNotes: candidatesFrom(notes),
+    });
+    const history = [
+      makeMessage('q', 'user', 'Which launch?'),
+      makeMessage('a', 'assistant', 'The June launch.'),
+    ];
+    const result = await runChatTurn(makeInput({ history }), deps);
+    const request = jest.mocked(deps.chat).mock.calls[0][0];
+    expect(Math.ceil((request.systemPrompt.length + request.text.length) / 3)).toBeLessThan(2896);
+    expect(request.text).toContain('The June launch.');
+    expect(request.text).toContain('Evidence');
+    expect(result.sources.length).toBeLessThanOrEqual(3);
+    expect(deps.chat).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses additional local capacity reported by the device', async () => {
+    const notes = Array.from({ length: 3 }, (_, index) =>
+      makeNote({
+        id: index + 1,
+        title: `Pricing ${index}`,
+        content: 'Evidence '.repeat(1500),
+      }),
+    );
+    const deps = makeDeps({
+      getChatSelection: LOCAL_SELECTION,
+      getCandidateNotes: candidatesFrom(notes),
+    });
+    await runChatTurn(makeInput(), deps);
+    jest
+      .mocked(getLocalReasoningReadiness)
+      .mockResolvedValue({ status: 'ready', contextSize: 8192, tokenCounting: true });
+    await runChatTurn(makeInput(), deps);
+    expect(sentText(deps.chat, 1).length).toBeGreaterThan(sentText(deps.chat, 0).length + 3000);
+    const request = jest.mocked(deps.chat).mock.calls[1][0];
+    expect(Math.ceil((request.systemPrompt.length + request.text.length) / 3)).toBeLessThan(6992);
+  });
+
+  it('bounds multilingual local input when native token counting is unavailable', async () => {
+    jest.mocked(countLocalReasoningTokens).mockResolvedValue(null);
+    const deps = makeDeps({
+      getChatSelection: LOCAL_SELECTION,
+      getCandidateNotes: candidatesFrom([
+        makeNote({ id: 1, title: 'Budget', content: '预算会议😀'.repeat(3000) }),
+      ]),
+    });
+    await runChatTurn(makeInput(), deps);
+    // Even counting each non-ASCII UTF-8 byte separately leaves room for the answer.
+    const request = jest.mocked(deps.chat).mock.calls[0][0];
+    const text = request.systemPrompt + request.text;
+    const ascii = text.replace(/[\u0080-\uFFFF]/g, '');
+    const nonAsciiBytes = Buffer.byteLength(
+      (text.match(/[\u0080-\uFFFF]/g) ?? []).join(''),
+      'utf8',
+    );
+    expect(Math.ceil(ascii.length / 3) + nonAsciiBytes).toBeLessThan(2896);
+    expect(request.text).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u,
+    );
+  });
+
+  it('rejects an oversized cloud question without silently cutting it or calling the model', async () => {
+    const deps = makeDeps();
+    const error = await runChatTurn(makeInput({ question: 'question '.repeat(8000) }), deps).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(toChatErrorMessage(error)).toContain('shorter question');
+    expect(deps.chat).not.toHaveBeenCalled();
+  });
+
+  it('does not send when cancelled while counting the local prompt', async () => {
+    const controller = new AbortController();
+    jest.mocked(countLocalReasoningTokens).mockImplementation(async () => {
+      controller.abort();
+      return 1000;
+    });
+    const deps = makeDeps({ getChatSelection: LOCAL_SELECTION });
+    await expect(runChatTurn(makeInput({ signal: controller.signal }), deps)).rejects.toMatchObject(
+      { name: 'AbortError' },
+    );
+    expect(deps.chat).not.toHaveBeenCalled();
+  });
+
+  it('includes a relevant cloud note beyond the old four-note cutoff', async () => {
+    const notes = Array.from({ length: 14 }, (_, index) =>
+      makeNote({ id: index + 1, title: `Pricing ${index + 1}`, content: `Decision ${index + 1}.` }),
+    );
+    const deps = makeDeps({ getCandidateNotes: candidatesFrom(notes) });
+    const result = await runChatTurn(makeInput(), deps);
+    expect(sentText(deps.chat)).toContain('Decision 12.');
+    expect(sentText(deps.chat)).not.toContain('Decision 13.');
+    expect(result.sources).toHaveLength(12);
+  });
+
+  it('covers twenty short notes for a broad cloud recap', async () => {
+    const notes = Array.from({ length: 25 }, (_, index) =>
+      makeNote({ id: index + 1, title: `Meeting ${index + 1}`, content: `Decision ${index + 1}.` }),
+    );
+    const deps = makeDeps({ getCandidateNotes: candidatesFrom(notes) });
+    const result = await runChatTurn(makeInput({ question: 'Catch me up on this week' }), deps);
+    expect(sentText(deps.chat)).toContain('Decision 20.');
+    expect(sentText(deps.chat)).not.toContain('Decision 21.');
+    expect(result.sources).toHaveLength(20);
+  });
+
+  it('bounds long cloud history while retaining the latest exchange', async () => {
+    const history = [
+      makeMessage('old-q', 'user', 'Old question'),
+      makeMessage('old-a', 'assistant', 'Old details '.repeat(10000)),
+      makeMessage('new-q', 'user', 'What is the launch date?'),
+      makeMessage('new-a', 'assistant', 'Launch is June 3.'),
+    ];
+    const deps = makeDeps();
+    await runChatTurn(makeInput({ history }), deps);
+    expect(sentText(deps.chat).length).toBeLessThan(48_000);
+    expect(sentText(deps.chat)).toContain('Launch is June 3.');
+    expect(sentText(deps.chat)).not.toContain('Old details');
+  });
+
+  it('includes a meeting later this week only when the question asks for the week', async () => {
+    const deps = makeDeps({
+      getCalendarEvents: () => [
+        makeEvent('Sunday planning', new Date(2026, 9, 25, 10), new Date(2026, 9, 25, 11)),
+      ],
+    });
+    await runChatTurn(makeInput({ question: 'What meetings do I have this week?' }), deps);
+    expect(sentText(deps.chat)).toContain('Sunday planning');
+    expect(sentText(deps.chat)).toContain('next 7 days');
+  });
+
+  it('fits a busy local calendar and labels events left out of the prompt', async () => {
+    const deps = makeDeps({
+      getChatSelection: LOCAL_SELECTION,
+      getCalendarEvents: () =>
+        Array.from({ length: 80 }, (_, index) =>
+          makeEvent(
+            `Meeting ${index} ${'long title '.repeat(30)}`,
+            new Date(2026, 9, 22, 10),
+            new Date(2026, 9, 22, 11),
+          ),
+        ),
+    });
+    await runChatTurn(makeInput(), deps);
+    const request = jest.mocked(deps.chat).mock.calls[0][0];
+    expect(Math.ceil((request.systemPrompt.length + request.text.length) / 3)).toBeLessThan(2896);
+    expect(request.text).toContain('events omitted');
+    expect(request.text).toContain('this is not the full schedule');
+    expect(request.text).toContain('Meeting 0');
+  });
+
+  it('bounds the entire cloud prompt and records only the notes actually sent', async () => {
+    const deps = makeDeps({
+      getCandidateNotes: candidatesFrom(
+        Array.from({ length: 14 }, (_, index) =>
+          makeNote({
+            id: index + 1,
+            title: `Budget ${index + 1}`,
+            content: '预算会议😀'.repeat(2000),
+          }),
+        ),
+      ),
+    });
+    const result = await runChatTurn(makeInput(), deps);
+    const request = jest.mocked(deps.chat).mock.calls[0][0];
+    const text = request.systemPrompt + '\n\n' + request.text;
+    const ascii = text.replace(/[\u0080-\uFFFF]/g, '');
+    const nonAsciiBytes = Buffer.byteLength(
+      (text.match(/[\u0080-\uFFFF]/g) ?? []).join(''),
+      'utf8',
+    );
+    expect(Math.ceil(ascii.length / 3) + nonAsciiBytes).toBeLessThan(16000);
+    expect(result.sources.length).toBeGreaterThan(0);
+    expect(request.text.match(/^### /gm)).toHaveLength(result.sources.length);
+    for (const source of result.sources)
+      expect(request.text).toContain(`### ${source.title} (updated Oct 20)`);
+  });
+
+  it('rejects a local question that cannot fit even without supporting context', async () => {
+    const deps = makeDeps({ getChatSelection: LOCAL_SELECTION });
+    const error = await runChatTurn(makeInput({ question: 'question '.repeat(2000) }), deps).catch(
+      (caught: unknown) => caught,
+    );
+    expect(toChatErrorMessage(error)).toContain('shorter question');
+    expect(deps.chat).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing four-note selection for custom providers', async () => {
+    const deps = makeDeps({
+      getChatSelection: () => ({ mode: 'providers', providerId: 'openai', modelId: 'test' }),
+      getCandidateNotes: candidatesFrom(
+        Array.from({ length: 8 }, (_, index) =>
+          makeNote({ id: index + 1, content: 'Pricing details.' }),
+        ),
+      ),
+    });
+    const result = await runChatTurn(makeInput(), deps);
+    expect(result.sources).toHaveLength(4);
+  });
+
+  it('does not lose later-week events behind the old fifty-event retrieval cap', async () => {
+    mockGetUpcomingEvents.mockReturnValueOnce([
+      ...Array.from({ length: 50 }, (_, index) =>
+        makeEvent(`M${index}`, new Date(2026, 9, 22, 10), new Date(2026, 9, 22, 11)),
+      ),
+      makeEvent('Sunday planning', new Date(2026, 9, 25, 10), new Date(2026, 9, 25, 11)),
+    ]);
+    const deps = makeDeps({ getCalendarEvents: createDefaultChatTurnDeps().getCalendarEvents });
+    await runChatTurn(makeInput({ question: 'What meetings do I have this week?' }), deps);
+    expect(sentText(deps.chat)).toContain('Sunday planning');
+  });
+
+  it('describes the next event inside the requested weekly window', async () => {
+    const deps = makeDeps({
+      getCalendarEvents: () => [
+        makeEvent('Sunday planning', new Date(2026, 9, 25, 10), new Date(2026, 9, 25, 11)),
+      ],
+    });
+    const input = makeInput({ question: 'What meetings do I have this week?' });
+    await runChatTurn(input, deps);
+    expect(lastSteps(input.onSteps).find((step) => step.id === 'calendar')?.detail).toContain(
+      'Sunday planning',
+    );
+  });
+
+  it('keeps an emoji intact at a note excerpt boundary', async () => {
+    const deps = makeDeps({
+      getCandidateNotes: candidatesFrom([
+        makeNote({ id: 1, title: 'Pricing', content: `${'a'.repeat(5999)}😀` }),
+      ]),
+    });
+    await runChatTurn(makeInput(), deps);
+    expect(sentText(deps.chat)).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u,
+    );
+  });
+
   it('reports calendar, search, read and write steps in order', async () => {
     const deps = makeDeps({
       getCalendarEvents: jest.fn(() => [
@@ -432,7 +699,7 @@ describe('runChatTurn', () => {
     expect(getCandidateNotes).toHaveBeenCalledTimes(1);
     expect(getCandidateNotes).toHaveBeenCalledWith([], {
       includePrivate: false,
-      limit: 8,
+      limit: 40,
       window: expect.objectContaining({
         start: new Date(2026, 9, 19),
         end: new Date(2026, 9, 23),
@@ -568,7 +835,7 @@ describe('runChatTurn', () => {
   });
 
   it('reads only the notes it sends, and says how many matched in all', async () => {
-    const matched = [3, 4, 5, 6, 7, 8, 9].map((id) =>
+    const matched = Array.from({ length: 14 }, (_, index) => index + 3).map((id) =>
       makeNote({ id, title: `Pricing ${id}`, content: 'Pricing notes.' }),
     );
     const getCandidateNotes = candidatesFrom(matched);
@@ -578,11 +845,13 @@ describe('runChatTurn', () => {
 
     expect(getCandidateNotes).toHaveBeenCalledWith(
       expect.arrayContaining(['pricing']),
-      expect.objectContaining({ limit: 8 }),
+      expect.objectContaining({ limit: 24 }),
     );
-    expect(result.sources.map((source) => source.noteId)).toEqual([3, 4, 5, 6]);
+    expect(result.sources.map((source) => source.noteId)).toEqual([
+      3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+    ]);
     expect(lastSteps(input.onSteps).find((step) => step.id === 'search')?.detail).toBe(
-      '7 notes match',
+      '14 notes match',
     );
   });
 
@@ -604,7 +873,9 @@ describe('runChatTurn', () => {
   });
 
   it('reads no transcript past the matches it sends', async () => {
-    const meetings = [2, 3, 4, 5, 6, 7].map((id) => makeNote({ id, title: `Pricing sync ${id}` }));
+    const meetings = Array.from({ length: 14 }, (_, index) => index + 2).map((id) =>
+      makeNote({ id, title: `Pricing sync ${id}` }),
+    );
     const getNoteTranscript = jest.fn((_noteId: number) => 'We agreed on pricing.');
 
     const result = await runChatTurn(
@@ -612,8 +883,12 @@ describe('runChatTurn', () => {
       makeDeps({ getCandidateNotes: candidatesFrom(meetings), getNoteTranscript }),
     );
 
-    expect(result.sources.map((source) => source.noteId)).toEqual([2, 3, 4, 5]);
-    expect(getNoteTranscript.mock.calls.map(([id]) => id)).toEqual([2, 3, 4, 5]);
+    expect(result.sources.map((source) => source.noteId)).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+    ]);
+    expect(getNoteTranscript.mock.calls.map(([id]) => id)).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+    ]);
   });
 
   it('passes over empty notes from a period', async () => {
@@ -785,7 +1060,7 @@ describe('runChatTurn', () => {
 
     const result = await runChatTurn(makeInput({ question: 'Is the hiring freeze on?' }), deps);
 
-    expect(result.sources.map((source) => source.noteId)).toEqual([3, 4, 5, 6]);
+    expect(result.sources.map((source) => source.noteId)).toEqual([3, 4, 5, 6, 7]);
     expect(sentText(deps.chat)).toContain('The hiring freeze holds.');
   });
 
