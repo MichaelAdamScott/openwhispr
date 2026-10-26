@@ -1,4 +1,8 @@
 import React from 'react';
+import { createInstance } from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import en from '@/locales/en/translation.json';
+import ar from '@/locales/ar/translation.json';
 import { Alert, AppState, Keyboard, ScrollView, Platform } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
@@ -145,6 +149,17 @@ function selectedMode(): string | undefined {
     return row?.props.accessibilityState.selected;
   });
 }
+
+const workflowI18n = createInstance();
+beforeAll(async () => {
+  await workflowI18n.use(initReactI18next).init({
+    lng: 'en',
+    fallbackLng: 'en',
+    defaultNS: 'android',
+    resources: { en, ar },
+    interpolation: { escapeValue: false },
+  });
+});
 
 beforeEach(() => {
   mockLocalReasoningReady = false;
@@ -1600,5 +1615,49 @@ it('shows Android model download guidance without an Apple download status', asy
     ).toBeTruthy();
   } finally {
     Platform.OS = original;
+  }
+});
+
+it('localizes Android provider controls without changing an unsaved endpoint, model or key', async () => {
+  const originalOS = Platform.OS;
+  Platform.OS = 'android';
+  mockScope = 'notes';
+  mockConfig = {
+    inference: {
+      notes: {
+        mode: 'providers',
+        providerId: 'custom',
+        endpoint: 'https://provider.example/v1',
+        modelId: 'model-1',
+      },
+    },
+  };
+  try {
+    await workflowI18n.changeLanguage('ar');
+    render(<WorkflowSettingsScreen />);
+    await act(async () => undefined);
+    expect(screen.getByText('الاتصال')).toBeTruthy();
+    expect(screen.getByText('التحقق من الاتصال')).toBeTruthy();
+    fireEvent.changeText(screen.getByLabelText('عنوان URL للخادم'), 'https://second.example/v1');
+    fireEvent.changeText(screen.getByLabelText('معرّف النموذج'), 'custom-model-2');
+    fireEvent.changeText(screen.getByLabelText('مفتاح API'), 'synthetic-provider-key');
+    expect(mockSetCredential).not.toHaveBeenCalled();
+    await act(async () => {
+      await workflowI18n.changeLanguage('en');
+    });
+    expect(screen.getByLabelText('Server URL').props.value).toBe('https://second.example/v1');
+    expect(screen.getByLabelText('Model ID').props.value).toBe('custom-model-2');
+    expect(screen.getByLabelText('API key').props.value).toBe('synthetic-provider-key');
+    fireEvent.press(screen.getByText('Save'));
+    await waitFor(() => expect(mockUpdateConfig).toHaveBeenCalled());
+    expect(mockUpdateConfig.mock.calls[0][0]).toMatchObject({
+      inference: { notes: { endpoint: 'https://second.example/v1', modelId: 'custom-model-2' } },
+    });
+    expect(JSON.stringify(mockUpdateConfig.mock.calls)).not.toContain('synthetic-provider-key');
+  } finally {
+    Platform.OS = originalOS;
+    await act(async () => {
+      await workflowI18n.changeLanguage('en');
+    });
   }
 });

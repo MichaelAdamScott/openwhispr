@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/SettingsSection';
 import { Text } from '@/components/ui/Text';
 import { Toast } from '@/components/ui/Toast';
+import { useAndroidCopy } from '@/hooks/useAndroidCopy';
 import { useToast } from '@/hooks/useToast';
 import { confirmDestructive } from '@/lib/alerts';
 import { SettingsSwitch } from '@/components/ui/SettingsSwitch';
@@ -90,6 +91,7 @@ import {
 } from '@/lib/mobileProviders';
 
 type Picker = 'provider' | 'model';
+const PROVIDER_IDENTIFIER_STYLE = { writingDirection: 'ltr', textAlign: 'left' } as const;
 // How often an open page checks whether Apple Intelligence finished downloading its model.
 const APPLE_INTELLIGENCE_POLL_MS = 10_000;
 // Shown on the On-Device row while iOS Settings has Apple Intelligence to finish.
@@ -251,17 +253,27 @@ function VoiceAssistantSettings({ enabled }: { enabled: boolean }): React.JSX.El
 }
 
 function NoteTitleSettings(): React.JSX.Element {
+  const { copy } = useAndroidCopy();
   const autoTitle = useConfigStore((state) => state.config?.autoGenerateNoteTitle ?? true);
   const toggleAutoTitle = useConfigToggle('autoGenerateNoteTitle');
   return (
-    <SettingsSection title="Settings">
+    <SettingsSection title={copy('workflowSettings.settings', 'Settings')}>
       <SettingsRow
         iconStyle="line"
         icon="textformat"
         mdIcon="Type"
-        title="Auto-generate Note Titles"
-        description="Use AI to generate a short title for notes after enhancement."
-        rightElement={<SettingsSwitch value={autoTitle} onValueChange={toggleAutoTitle} />}
+        title={copy('workflowSettings.autoTitle', 'Auto-generate Note Titles')}
+        description={copy(
+          'workflowSettings.autoTitleBody',
+          'Use AI to generate a short title for notes after enhancement.',
+        )}
+        rightElement={
+          <SettingsSwitch
+            accessibilityLabel={copy('workflowSettings.autoTitle', 'Auto-generate Note Titles')}
+            value={autoTitle}
+            onValueChange={toggleAutoTitle}
+          />
+        }
         showChevron={false}
       />
     </SettingsSection>
@@ -269,12 +281,13 @@ function NoteTitleSettings(): React.JSX.Element {
 }
 
 export function WorkflowSettingsScreen(): React.JSX.Element {
+  const { copy } = useAndroidCopy();
   const scope = parseWorkflow(useLocalSearchParams<{ scope?: string }>().scope);
   if (!scope) {
     return (
       <SettingsScreen>
         <Text className="px-8 text-[15px] text-secondaryLabel">
-          This workflow is not available.
+          {copy('workflowSettings.unavailable', 'This workflow is not available.')}
         </Text>
       </SettingsScreen>
     );
@@ -301,6 +314,7 @@ function providerSelection(
 }
 
 function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX.Element {
+  const { copy } = useAndroidCopy();
   const config = useConfigStore((state) => state.config);
   const updateConfig = useConfigStore((state) => state.updateConfig);
   const setActiveMode = useProcessingModeStore((state) => state.setActiveMode);
@@ -403,8 +417,11 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
       : undefined) ??
     (selection.mode === 'providers' && savedSelection.mode !== 'providers'
       ? activeMode === 'private' && scope === 'dictation'
-        ? 'Save to switch to Bring Your Own Key. This turns Local Mode off.'
-        : 'Save to switch to Bring Your Own Key.'
+        ? copy(
+            'workflowSettings.switchProviderLocal',
+            'Save to switch to Bring Your Own Key. This turns Local Mode off.',
+          )
+        : copy('workflowSettings.switchProvider', 'Save to switch to Bring Your Own Key.')
       : undefined) ??
     (scope === 'dictation'
       ? LOCAL_MODE_DICTATION_NOTES[activeMode === 'private' ? 'on' : 'off']
@@ -441,13 +458,24 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
       (provider?.id !== 'custom' ||
         normalizeBaseUrl(saved.endpoint) === normalizeBaseUrl(selection.endpoint))
     );
-  }).map((other) => WORKFLOW_LABELS[other]);
+  }).map((other) => copy(`workflowSettings.${other}`, WORKFLOW_LABELS[other]));
   const deviceLabel = Platform.OS === 'android' ? 'phone' : 'iPhone';
   const keyFooter = sharedWith.length
-    ? `Stays on this ${deviceLabel}. Also used by ${joinNames(sharedWith)}.`
+    ? copy(
+        'workflowSettings.sharedKey',
+        `Stays on this ${deviceLabel}. Also used by ${joinNames(sharedWith)}.`,
+        { workflows: sharedWith.join(' • ') },
+      )
     : provider?.id === 'custom'
-      ? `Stays on this ${deviceLabel}. Every workflow using this server uses the same key.`
-      : `Stays on this ${deviceLabel}. Every workflow set to ${keyOwner} uses the same key.`;
+      ? copy(
+          'workflowSettings.serverKey',
+          `Stays on this ${deviceLabel}. Every workflow using this server uses the same key.`,
+        )
+      : copy(
+          'workflowSettings.providerKey',
+          `Stays on this ${deviceLabel}. Every workflow set to ${keyOwner} uses the same key.`,
+          { provider: keyOwner },
+        );
 
   // A passing check looks like finished setup, so leaving must not drop the key silently.
   const hasUnsavedChanges =
@@ -851,12 +879,15 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
             />
             {modeNote ? <SectionFooter>{modeNote}</SectionFooter> : null}
             {selection.mode === 'local' && Platform.OS === 'android' ? (
-              <SettingsSection title="On-device models">
+              <SettingsSection title={copy('workflowSettings.onDeviceModels', 'On-device models')}>
                 <SettingsRow
                   icon="arrow.down.circle"
                   mdIcon="Download"
-                  title="Choose or download models"
-                  description="Choose speech and text models for this phone."
+                  title={copy('workflowSettings.chooseModels', 'Choose or download models')}
+                  description={copy(
+                    'workflowSettings.chooseModelsBody',
+                    'Choose speech and text models for this phone.',
+                  )}
                   onPress={() => router.push('/(account)/ai-models')}
                 />
               </SettingsSection>
@@ -872,31 +903,44 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
             {selection.mode === 'local' && !speechScope && !onDeviceUnsupported ? (
               <SectionFooter>
                 {Platform.OS === 'android'
-                  ? 'Runs on your downloaded text model on this phone.'
+                  ? copy(
+                      'workflowSettings.localModelBody',
+                      'Runs on your downloaded text model on this phone.',
+                    )
                   : 'Runs on Apple Intelligence on this iPhone.'}
               </SectionFooter>
             ) : null}
             {selection.mode === 'providers' && provider ? (
               <>
-                <SettingsSection title="Connection">
+                <SettingsSection title={copy('workflowSettings.connection', 'Connection')}>
                   <SettingsRow
                     icon="network"
                     mdIcon="Network"
                     iconStyle="line"
-                    title="Provider"
-                    subtitle={provider.name}
+                    title={copy('workflowSettings.provider', 'Provider')}
+                    subtitle={
+                      provider.id === 'custom'
+                        ? copy('workflowSettings.custom', provider.name)
+                        : provider.name
+                    }
                     onPress={busy ? undefined : () => openPicker('provider')}
                   />
                   {picker === 'provider' &&
                     providers.map((item) =>
-                      choice(item.name, item.id === provider.id, () => chooseProvider(item.id)),
+                      choice(
+                        item.id === 'custom'
+                          ? copy('workflowSettings.custom', item.name)
+                          : item.name,
+                        item.id === provider.id,
+                        () => chooseProvider(item.id),
+                      ),
                     )}
                   {models.length > 0 ? (
                     <SettingsRow
                       icon="square.stack"
                       mdIcon="Layers"
                       iconStyle="line"
-                      title="Model"
+                      title={copy('workflowSettings.model', 'Model')}
                       subtitle={models.find((model) => model.id === modelId)?.name ?? modelId}
                       onPress={busy ? undefined : () => openPicker('model')}
                     />
@@ -912,9 +956,10 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                     <SettingsTextFieldRow
                       icon="server.rack"
                       mdIcon="Server"
-                      label="Server"
-                      accessibilityLabel="Server URL"
+                      label={copy('workflowSettings.server', 'Server')}
+                      accessibilityLabel={copy('workflowSettings.serverUrl', 'Server URL')}
                       value={selection.endpoint ?? ''}
+                      style={Platform.OS === 'android' ? PROVIDER_IDENTIFIER_STYLE : undefined}
                       onChangeText={(endpoint) => {
                         setSelection({ ...selection, endpoint });
                         clearInputs();
@@ -929,9 +974,10 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                     <SettingsTextFieldRow
                       icon="square.stack"
                       mdIcon="Layers"
-                      label="Model ID"
-                      accessibilityLabel="Model ID"
+                      label={copy('workflowSettings.modelId', 'Model ID')}
+                      accessibilityLabel={copy('workflowSettings.modelId', 'Model ID')}
                       value={modelId}
+                      style={Platform.OS === 'android' ? PROVIDER_IDENTIFIER_STYLE : undefined}
                       onChangeText={(nextModel) =>
                         setSelection({ ...selection, modelId: nextModel })
                       }
@@ -943,15 +989,19 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                 </SettingsSection>
                 {provider.id === 'custom' ? (
                   <SectionFooter>
-                    On this phone, localhost is this phone. Use your server's network address.
+                    {copy(
+                      'workflowSettings.serverHint',
+                      "On this phone, localhost is this phone. Use your server's network address.",
+                    )}
                   </SectionFooter>
                 ) : null}
-                <SettingsSection title="API Key">
+                <SettingsSection title={copy('workflowSettings.apiKeyTitle', 'API Key')}>
                   <SettingsTextFieldRow
                     icon="key"
                     mdIcon="KeyRound"
-                    accessibilityLabel="API key"
+                    accessibilityLabel={copy('workflowSettings.apiKey', 'API key')}
                     value={apiKey}
+                    style={Platform.OS === 'android' ? PROVIDER_IDENTIFIER_STYLE : undefined}
                     onChangeText={(next) => {
                       // A paste or password-manager fill arrives as one change; typing adds one character.
                       if (next.length - apiKey.length > 1) Keyboard.dismiss();
@@ -963,11 +1013,16 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                       configured
                         ? '••••••••••••'
                         : provider.id === 'custom'
-                          ? 'Optional'
-                          : 'Paste your API key'
+                          ? copy('workflowSettings.optional', 'Optional')
+                          : copy('workflowSettings.pasteKey', 'Paste your API key')
                     }
                     accessibilityHint={
-                      configured ? 'A key is saved. Enter a new key to replace it.' : undefined
+                      configured
+                        ? copy(
+                            'workflowSettings.savedKeyHint',
+                            'A key is saved. Enter a new key to replace it.',
+                          )
+                        : undefined
                     }
                     trailing={
                       configured && !apiKey ? (
@@ -978,7 +1033,9 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                             size={15}
                             color="systemGreen"
                           />
-                          <Text className="text-[15px] text-systemGreen">Saved</Text>
+                          <Text className="text-[15px] text-systemGreen">
+                            {copy('workflowSettings.saved', 'Saved')}
+                          </Text>
                         </View>
                       ) : undefined
                     }
@@ -989,7 +1046,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                       iconStyle="line"
                       icon="arrow.up.right.square"
                       mdIcon="ExternalLink"
-                      title="Get an API Key"
+                      title={copy('workflowSettings.externalKey', 'Get an API Key')}
                       showChevron={false}
                       onPress={
                         busy ? undefined : () => openKeyPage(PROVIDER_SETUP_URLS[provider.id])
@@ -1001,7 +1058,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                       iconStyle="line"
                       icon="trash"
                       mdIcon="Trash2"
-                      title="Remove Key"
+                      title={copy('workflowSettings.removeKey', 'Remove Key')}
                       destructive
                       showChevron={false}
                       onPress={busy ? undefined : removeCredential}
@@ -1009,12 +1066,12 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                   ) : null}
                 </SettingsSection>
                 <SectionFooter>{keyFooter}</SectionFooter>
-                <SettingsSection title="Verify">
+                <SettingsSection title={copy('workflowSettings.verify', 'Verify')}>
                   <SettingsRow
                     iconStyle="line"
                     icon="checkmark.shield"
                     mdIcon="ShieldCheck"
-                    title="Check Connection"
+                    title={copy('workflowSettings.checkConnection', 'Check Connection')}
                     showChevron={false}
                     rightElement={checking === 'test' ? <ActivityIndicator /> : undefined}
                     onPress={busy ? undefined : () => diagnose('test')}
@@ -1024,7 +1081,7 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                       iconStyle="line"
                       icon="magnifyingglass"
                       mdIcon="Search"
-                      title="Discover Models"
+                      title={copy('workflowSettings.discoverModels', 'Discover Models')}
                       showChevron={false}
                       rightElement={checking === 'discover' ? <ActivityIndicator /> : undefined}
                       onPress={busy ? undefined : () => diagnose('discover')}
@@ -1032,8 +1089,10 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                   ) : null}
                 </SettingsSection>
                 <SectionFooter>
-                  Checks use the key above without saving it. Text checks send a short test prompt
-                  and may cost a little; transcription checks only confirm access to the model list.
+                  {copy(
+                    'workflowSettings.verifyHint',
+                    'Checks use the key above without saving it. Text checks send a short test prompt and may cost a little; transcription checks only confirm access to the model list.',
+                  )}
                 </SectionFooter>
                 <View className="mx-4 mb-7">
                   <Pressable
@@ -1053,7 +1112,9 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
                     {busy && !checking ? (
                       <ActivityIndicator color="white" />
                     ) : (
-                      <Text className="text-[15px] font-semibold text-white">Save</Text>
+                      <Text className="text-[15px] font-semibold text-white">
+                        {copy('save', 'Save')}
+                      </Text>
                     )}
                   </Pressable>
                 </View>

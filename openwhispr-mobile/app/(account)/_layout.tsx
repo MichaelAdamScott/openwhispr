@@ -1,3 +1,6 @@
+import type { NativeStackHeaderProps } from '@react-navigation/native-stack';
+import { useAndroidCopy } from '@/hooks/useAndroidCopy';
+import { WorkflowSettingsHeader } from '@/components/settings/WorkflowSettingsHeader';
 import { Stack, router } from 'expo-router';
 import { Platform, Pressable } from 'react-native';
 import { SystemIcon } from '@/components/ui/SystemIcon';
@@ -33,7 +36,12 @@ function renderHeaderLeft({ canGoBack }: { canGoBack?: boolean }) {
   return canGoBack ? <HeaderBackButton /> : null;
 }
 
+function renderWorkflowHeader({ options, navigation }: NativeStackHeaderProps) {
+  return <WorkflowSettingsHeader title={options.title ?? ''} onBack={navigation.goBack} />;
+}
+
 export default function AccountLayout() {
+  const { copy } = useAndroidCopy();
   return (
     <Stack
       screenOptions={{
@@ -54,7 +62,15 @@ export default function AccountLayout() {
         name="ai-workflow"
         options={({ route }) => {
           const scope = parseWorkflow((route.params as { scope?: string })?.scope);
-          return { title: scope ? WORKFLOW_LABELS[scope] : '', headerLargeTitle: false };
+          return {
+            title: scope ? copy(`workflowSettings.${scope}`, WORKFLOW_LABELS[scope]) : '',
+            headerLargeTitle: false,
+            ...(Platform.OS === 'android'
+              ? {
+                  header: renderWorkflowHeader,
+                }
+              : {}),
+          };
         }}
       />
       <Stack.Screen
