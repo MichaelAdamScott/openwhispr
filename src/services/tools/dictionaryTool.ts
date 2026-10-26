@@ -5,6 +5,7 @@ import type { ToolDefinition, ToolResult } from "./ToolRegistry";
 export interface SharedDictionaryWord {
   id: string;
   word: string;
+  reachesPrompt: boolean;
 }
 
 export interface DictionaryActions {
@@ -64,6 +65,9 @@ export function createUpdateDictionaryTool(actions: DictionaryActions): ToolDefi
         storedByKey.set(wordKey, [...(storedByKey.get(wordKey) ?? []), word]);
       }
       const sharedEntries = await actions.getSharedWords();
+      const sharedPromptKeys = new Set(
+        sharedEntries.filter((entry) => entry.reachesPrompt).map((entry) => key(entry.word))
+      );
       const sharedIdsByWord = new Map<string, string[]>();
       for (const { id, word } of sharedEntries) {
         const wordKey = key(word);
@@ -85,9 +89,10 @@ export function createUpdateDictionaryTool(actions: DictionaryActions): ToolDefi
       const notFound = requestedRemove.filter((word) => !has(word));
       // Removals apply first, so a respelling in one call ("Acme" → "ACME") adds
       // the new spelling. Added words always land in Personal; one a teammate
-      // still shares counts as present.
+      // still shares counts as present only if it reaches a prompt.
       const removedKeys = new Set(requestedRemove.map(key));
-      const presentAfterRemovals = (word: string) => has(word) && !removedKeys.has(key(word));
+      const presentAfterRemovals = (word: string): boolean =>
+        (inPersonal(word) || sharedPromptKeys.has(key(word))) && !removedKeys.has(key(word));
       const add = requestedAdd.filter((word) => !presentAfterRemovals(word));
       const alreadyPresent = requestedAdd.filter(presentAfterRemovals);
 

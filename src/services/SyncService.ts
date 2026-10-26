@@ -314,12 +314,14 @@ function sharedDictionaryAccessLost(err: unknown): "noAccess" | "ssoRequired" | 
   return null;
 }
 
+export type DictionarySyncResult = "synced" | "skipped" | "failed";
+
 type SharedEntriesPull = "snapshot" | "delta" | "scopesReturned";
 
-// Only a loaded workspace list can say the plan is missing.
+// Cached billing can lag behind an upgrade, including after a failed refresh.
 function isKnownWithoutSharedDictionaryPlan(workspaceId: string): boolean {
-  const { loaded, error, workspaces } = useWorkspaceStore.getState();
-  if (!loaded || error) return false;
+  const { loaded, workspaces } = useWorkspaceStore.getState();
+  if (!loaded) return false;
   const workspace = workspaces.find((candidate) => candidate.id === workspaceId);
   return workspace !== undefined && !hasSharedDictionaryPlan(workspace);
 }
@@ -715,7 +717,9 @@ export class SyncService {
         teamSpacesReady = await this.syncSpaces(authGeneration);
         if (!hasValidatedAuthContext()) return;
         // Both branches below: shared lists follow membership, not cloud backup.
-        await this.syncSharedDictionary(authGeneration);
+        const dictionaryGeneration = useSharedDictionaryStore.getState().generation;
+        const sharedResult = await this.syncSharedDictionary(authGeneration);
+        let personalSucceeded = true;
         if (!hasValidatedAuthContext()) return;
         if (full) {
           await this.syncFolders();
@@ -730,7 +734,7 @@ export class SyncService {
           // true), so re-run until clean rather than stalling until the next trigger.
           do {
             this.dictionaryDirty = false;
-            await this.syncDictionary();
+            if (!(await this.syncDictionary())) personalSucceeded = false;
           } while (this.dictionaryDirty);
           do {
             this.snippetsDirty = false;
@@ -745,6 +749,9 @@ export class SyncService {
           await this.syncNotes(true);
         }
         if (!hasValidatedAuthContext()) return;
+        if (personalSucceeded && sharedResult !== "failed" && (full || sharedResult === "synced")) {
+          useSharedDictionaryStore.getState().markSynced(dictionaryGeneration);
+        }
         // Outside the branch above: Insights uploads ride their own opt-in,
         // while queued erasures run for every authenticated account.
         await this.syncAnalytics();
@@ -826,22 +833,25 @@ export class SyncService {
     void this.syncAll(waitForLock);
   }
 
-  async syncDictionaryNow(): Promise<void> {
-    if (!this.canSync()) return;
+  async syncDictionaryNow(): Promise<DictionarySyncResult> {
+    if (!this.canSync()) return "skipped";
     // A sync already running will drain dictionaryDirty before it finishes, so
     // flag a re-run instead of dropping this request.
     if (this.syncing) {
       this.dictionaryDirty = true;
-      return;
+      return "skipped";
     }
     this.syncing = true;
+    let succeeded = true;
     try {
       do {
         this.dictionaryDirty = false;
-        await this.syncDictionary();
+        if (!(await this.syncDictionary())) succeeded = false;
       } while (this.dictionaryDirty);
+      return succeeded ? "synced" : "failed";
     } catch (err) {
       console.error("Dictionary sync failed:", err);
+      return "failed";
     } finally {
       this.syncing = false;
     }
@@ -849,15 +859,18 @@ export class SyncService {
 
   // The Dictionary page's Sync button. Waits for the sync lock rather than
   // flagging a re-run: a running syncAll() may already be past its shared pass.
-  async syncSharedDictionaryNow(): Promise<void> {
-    if (!this.canSyncTeamSpaces()) return;
+  async syncSharedDictionaryNow(): Promise<DictionarySyncResult> {
+    if (!this.canSyncTeamSpaces()) return "skipped";
     const authGeneration = getValidatedAuthGeneration();
-    if (authGeneration == null) return;
+    if (authGeneration == null) return "skipped";
     try {
-      await navigator.locks.request(SYNC_ALL_LOCK, () => this.syncSharedDictionary(authGeneration));
+      return await navigator.locks.request(SYNC_ALL_LOCK, () =>
+        this.syncSharedDictionary(authGeneration)
+      );
     } catch (err) {
-      if (isAuthContextError(err)) return;
+      if (isAuthContextError(err)) return "skipped";
       console.error("Shared dictionary sync failed:", err);
+      return "failed";
     }
   }
 
@@ -2749,7 +2762,7 @@ export class SyncService {
     }
   }
 
-  private async syncDictionary(): Promise<void> {
+  private async syncDictionary(): Promise<boolean> {
     // Fail loud on preload skew: a missing binding silently optional-chained to
     // a no-op would lose user data, so assert the whole surface up front.
     const api = window.electronAPI;
@@ -2770,14 +2783,16 @@ export class SyncService {
       );
     }
 
-    await this.pushPendingDictionary();
-    await this.pushDictionaryDeletes();
-    await this.pullDictionary();
+    const pushed = await this.pushPendingDictionary();
+    const deleted = await this.pushDictionaryDeletes();
+    const pulled = await this.pullDictionary();
+    return pushed && deleted && pulled;
   }
 
-  private async pushPendingDictionary(): Promise<void> {
+  private async pushPendingDictionary(): Promise<boolean> {
     const pending = (await window.electronAPI.getPendingDictionary?.()) ?? [];
-    if (pending.length === 0) return;
+    if (pending.length === 0) return true;
+    let succeeded = true;
 
     const updates = pending.filter((e) => e.cloud_id);
     const creates = pending.filter((e) => !e.cloud_id);
@@ -2793,6 +2808,7 @@ export class SyncService {
         });
         await window.electronAPI.markDictionarySynced?.(entry.id, entry.cloud_id!, entry);
       } catch (err) {
+        succeeded = false;
         // 404: another device purged the cloud row. Clear the stale cloud_id so
         // the next push re-creates it via batchCreate instead of retrying PATCH.
         if (isHttpStatus(err, 404)) {
@@ -2839,22 +2855,27 @@ export class SyncService {
             try {
               await DictionaryService.delete(server.id);
             } catch (deleteErr) {
+              succeeded = false;
               console.error("Dictionary orphan cleanup failed:", deleteErr);
             }
           }
         }
         if (unmatched > 0) {
+          succeeded = false;
           console.warn(
             `Dictionary batch-create: ${unmatched}/${chunk.length} rows had no matching server response`
           );
         }
       } catch (err) {
+        succeeded = false;
         console.error("Dictionary batch create failed:", err);
       }
     }
+    return succeeded;
   }
 
-  private async pushDictionaryDeletes(): Promise<void> {
+  private async pushDictionaryDeletes(): Promise<boolean> {
+    let succeeded = true;
     const deletes = (await window.electronAPI.getPendingDictionaryDeletes?.()) ?? [];
     for (const entry of deletes) {
       if (!entry.cloud_id) continue;
@@ -2866,14 +2887,17 @@ export class SyncService {
         if (isHttpStatus(err, 404)) {
           await window.electronAPI.hardDeleteDictionary?.(entry.id);
         } else {
+          succeeded = false;
           console.error("Dictionary delete sync failed:", err);
         }
       }
     }
+    return succeeded;
   }
 
-  private async pullDictionary(): Promise<void> {
+  private async pullDictionary(): Promise<boolean> {
     let changed = false;
+    let succeeded = true;
     try {
       const since = localStorage.getItem("lastSyncedAt.dictionary") ?? DICTIONARY_PULL_EPOCH;
       const sinceId = localStorage.getItem("lastSyncedAt.dictionary.id") ?? undefined;
@@ -2937,6 +2961,7 @@ export class SyncService {
         // reached and ends the pass rather than failing: a pull that saved
         // nothing would download everything again on every pass.
         if (last.updated_at === cursor && last.id === cursorId) {
+          succeeded = false;
           console.warn("Dictionary pull stopped advancing; resuming next pass", {
             cursor,
             cursorId,
@@ -2950,10 +2975,12 @@ export class SyncService {
       if (maxUpdatedAt) localStorage.setItem("lastSyncedAt.dictionary", maxUpdatedAt);
       if (maxId) localStorage.setItem("lastSyncedAt.dictionary.id", maxId);
     } catch (err) {
+      succeeded = false;
       console.error("Dictionary pull failed:", err);
     }
     // Pages applied before a failure are already in the database.
     if (changed) await window.electronAPI.broadcastDictionaryUpdated?.()?.catch(console.error);
+    return succeeded;
   }
 
   // Dropping the cursor makes the next pull read from the epoch, tombstones
@@ -2971,7 +2998,7 @@ export class SyncService {
    * load, the hints) and the arrival event happen only while the account and
    * workspace the pass started under are still current.
    */
-  private async syncSharedDictionary(authGeneration: number): Promise<void> {
+  private async syncSharedDictionary(authGeneration: number): Promise<DictionarySyncResult> {
     this.backfillPersonalSharedAt();
     this.sharedDictionaryPassChanged = false;
     const store = useSharedDictionaryStore.getState();
@@ -3019,25 +3046,32 @@ export class SyncService {
         if (isCurrent()) {
           useSettingsStore.getState().setSharedDictionaryHints(EMPTY_SHARED_HINTS, null);
         }
-        return;
+        return "skipped";
       }
-      if (this.sharedDictionaryRoutesMissingFor === authGeneration) return;
+      if (this.sharedDictionaryRoutesMissingFor === authGeneration) return "skipped";
 
       if (isCurrent()) store.setSyncing(true);
       const before = await api.getSharedDictionary!(workspaceId);
-      // Without the plan the server answers every pass with the same paused,
-      // read-only lists, so a mirror that already says paused stays as it is.
-      if (!before.meta?.paused || !isKnownWithoutSharedDictionaryPlan(workspaceId)) {
-        await this.pullSharedDictionary(workspaceId, before, authGeneration);
-        // Recorded for the pass's workspace: a stale pass still proves the
-        // routes exist, but says nothing about the current workspace's access.
-        store.setStatus("ready", workspaceId);
-      }
+      // Billing may have changed on another device since this mirror paused.
+      await this.pullSharedDictionary(workspaceId, before, authGeneration);
+      store.setStatus("ready", workspaceId);
 
-      if (!isCurrent()) return;
-      await store.load(workspaceId, generation);
-      if (!isCurrent()) return;
+      if (!isCurrent()) return "skipped";
+      const mirrorLoaded = await store.load(workspaceId, generation);
+      if (!isCurrent()) return "skipped";
+      if (!mirrorLoaded) return "failed";
+      if (
+        useSharedDictionaryStore.getState().snapshot?.meta?.paused === false &&
+        isKnownWithoutSharedDictionaryPlan(workspaceId)
+      ) {
+        // The server resumed sharing; refresh the billing that gates its controls.
+        await assertAuthGenerationCurrent(authGeneration);
+        await useWorkspaceStore.getState().refresh();
+        if (!isCurrent()) return "skipped";
+        if (useWorkspaceStore.getState().error) return "failed";
+      }
       this.announceSharedDictionaryArrival(workspaceId, countApplyingSharedWords(before));
+      return "synced";
     } catch (err) {
       if (isAuthContextError(err)) throw err;
       const lostAccess = workspaceId ? sharedDictionaryAccessLost(err) : null;
@@ -3056,20 +3090,21 @@ export class SyncService {
           console.error("Shared dictionary cleanup failed:", clearErr);
         }
         store.setStatus(lostAccess, workspaceId);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return "skipped";
         // A load after a failed clear would republish the lost lists' words.
         if (cleared) await store.load(workspaceId, generation);
         else useSettingsStore.getState().setSharedDictionaryHints(EMPTY_SHARED_HINTS, workspaceId);
-        return;
+        return "skipped";
       }
       // A plain 404 is an API without the shared dictionary routes: nothing
       // to sync, nothing to tell the user.
       if (isHttpStatus(err, 404)) {
         this.sharedDictionaryRoutesMissingFor = authGeneration;
         store.setStatus("unavailable", workspaceId);
-        return;
+        return "skipped";
       }
       console.error("Shared dictionary sync failed:", err);
+      return "failed";
     } finally {
       if (isCurrent()) useSharedDictionaryStore.getState().setSyncing(false);
       // Lets every window's Dictionary page reload a mirror this pass rewrote,

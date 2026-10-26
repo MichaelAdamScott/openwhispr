@@ -2,7 +2,12 @@ import type {
   SharedDictionarySnapshot,
   SharedDictionarySnapshotEntry,
 } from "../types/sharedDictionary";
-import { dictionaryWordKey } from "./snippets";
+import {
+  dictionaryWordKey,
+  getKeytermDictionaryWords,
+  getKeywordDictionaryWords,
+  getLlmDictionaryWords,
+} from "./snippets";
 
 export interface SharedHintWords {
   readonly space: readonly string[];
@@ -139,16 +144,37 @@ function selectSuppressedPersonal(
 }
 
 /**
- * The applied shared words that reach prompts, with their entry ids, for the
- * assistant's dictionary tool: a word that never reaches a prompt must not count
- * as "already in the dictionary".
+ * Applied shared terms for the assistant, retaining every id for removals.
+ * Only words that survive a prompt's caps count as already present on adds.
  */
 export function selectAppliedSharedWords(
-  snapshot: SharedDictionarySnapshot
-): { id: string; word: string }[] {
+  snapshot: SharedDictionarySnapshot,
+  settings?: Parameters<typeof getLlmDictionaryWords>[0]
+): { id: string; word: string; reachesPrompt: boolean }[] {
+  const promptSettings = {
+    ...settings,
+    sharedDictionaryHints: {
+      ...selectSharedHintWords(snapshot),
+      suppressedPersonal: settings?.sharedDictionaryHints?.suppressedPersonal,
+    },
+  };
+  // Decoder prompts are a stricter subset of the keyword list. Keyterms can
+  // skip overlong words, and LLM paths differ on whether triggers participate.
+  const promptKeys = new Set(
+    [
+      ...getKeytermDictionaryWords(promptSettings),
+      ...getKeywordDictionaryWords(promptSettings),
+      ...getLlmDictionaryWords(promptSettings, { includeTriggers: true }),
+      ...getLlmDictionaryWords(promptSettings, { includeTriggers: false }),
+    ].map(dictionaryWordKey)
+  );
   return selectAppliedSharedEntries(snapshot)
     .filter((entry) => isTermLikeSharedWord(entry.word))
-    .map((entry) => ({ id: entry.cloudId, word: entry.word.trim() }));
+    .map((entry) => ({
+      id: entry.cloudId,
+      word: entry.word.trim(),
+      reachesPrompt: promptKeys.has(dictionaryWordKey(entry.word)),
+    }));
 }
 
 /**

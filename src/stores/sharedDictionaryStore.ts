@@ -104,8 +104,7 @@ interface SharedDictionaryState {
   status: SharedDictionaryStatus;
   snapshot: SharedDictionarySnapshot | null;
   syncing: boolean;
-  // The later of the shared lists' last pass and the page's last Sync, which
-  // also syncs the personal dictionary (the only work it does without a workspace).
+  // Only completed sync passes publish this; mirror writes can precede a failed pass.
   lastSyncedAt: string | null;
   // Set by the arrival toast's "View words".
   requestedList: ListKey | null;
@@ -114,8 +113,8 @@ interface SharedDictionaryState {
   // Bumped on every account or active-workspace change; work started under an
   // older generation never publishes.
   generation: number;
-  load: (workspaceId: string | null, generation: number) => Promise<void>;
-  reload: () => Promise<void>;
+  load: (workspaceId: string | null, generation: number) => Promise<boolean>;
+  reload: () => Promise<boolean>;
   handleScopeChange: (workspaceId: string | null) => void;
   resetForAccountChange: () => void;
   setRequestedList: (list: ListKey | null) => void;
@@ -125,9 +124,6 @@ interface SharedDictionaryState {
   // A Sync started under `generation` finished; ignored after an account or workspace change.
   markSynced: (generation: number) => void;
 }
-
-const laterOf = (left: string | null, right: string | null): string | null =>
-  left === null || (right !== null && Date.parse(right) > Date.parse(left)) ? right : left;
 
 function readAccessMap(): Record<string, AccessStatus> {
   try {
@@ -176,12 +172,12 @@ export const useSharedDictionaryStore = create<SharedDictionaryState>((set, get)
     movedPersonal: [],
     generation: 0,
 
-    load: async (workspaceId, generation) => {
+    load: async (workspaceId, generation): Promise<boolean> => {
       if (!workspaceId) {
-        if (!isCurrent(workspaceId, generation)) return;
+        if (!isCurrent(workspaceId, generation)) return false;
         set({ snapshot: null, movedPersonal: [] });
         useSettingsStore.getState().setSharedDictionaryHints(EMPTY_SHARED_HINTS, null);
-        return;
+        return false;
       }
       const api = window.electronAPI;
       let snapshot: SharedDictionarySnapshot | undefined;
@@ -197,13 +193,12 @@ export const useSharedDictionaryStore = create<SharedDictionaryState>((set, get)
           { error: (error as Error)?.message },
           "dictionary"
         );
-        return;
+        return false;
       }
-      if (!snapshot || !isCurrent(workspaceId, generation)) return;
+      if (!snapshot || !isCurrent(workspaceId, generation)) return false;
       set({
         snapshot,
         movedPersonal: movedPersonal ?? [],
-        lastSyncedAt: laterOf(get().lastSyncedAt, snapshot.meta?.syncedAt ?? null),
       });
       useSettingsStore
         .getState()
@@ -211,6 +206,7 @@ export const useSharedDictionaryStore = create<SharedDictionaryState>((set, get)
           selectSharedHintWords(snapshot, movedPersonal ?? []),
           workspaceId
         );
+      return true;
     },
 
     reload: () => get().load(get().workspaceId, get().generation),

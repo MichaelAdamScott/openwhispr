@@ -1,4 +1,5 @@
 const Database = require("better-sqlite3");
+const { dictionaryWordKey } = require("../utils/dictionaryWordKey");
 const {
   NOTE_TEXT_FIELDS,
   SUMMARY_CLEARED_METADATA,
@@ -3051,7 +3052,9 @@ class DatabaseManager {
            WHERE deleted_at IS NULL AND shared_at IS NOT NULL ${includeSynced ? "" : "AND cloud_id IS NULL"}`
         )
         .all();
-      const byLower = new Map(rows.map((row) => [row.word.toLowerCase(), row]));
+      const requested = new Set(
+        [...this._normalizeDictionaryWords(words).values()].map(dictionaryWordKey)
+      );
       // A synced row is never pushed as a delete: the server retires it in the
       // same request, or keeps it when the word still applies through a list
       // this device never mirrored. The personal pull then settles it.
@@ -3060,9 +3063,8 @@ class DatabaseManager {
       );
       const retired = [];
       this.db.transaction(() => {
-        for (const lower of this._normalizeDictionaryWords(words).keys()) {
-          const row = byLower.get(lower);
-          if (!row) continue;
+        for (const row of rows) {
+          if (!requested.has(dictionaryWordKey(row.word))) continue;
           retire.run(row.id);
           retired.push(row.word);
         }
@@ -3091,18 +3093,23 @@ class DatabaseManager {
           "SELECT id, word FROM custom_dictionary WHERE deleted_at IS NOT NULL AND fallback_retired = 1"
         )
         .all();
-      const byLower = new Map(rows.map((row) => [row.word.toLowerCase(), row]));
-      const live = this._livePersonalRowsByLower();
+      const requested = new Set(
+        [...this._normalizeDictionaryWords(words).values()].map(dictionaryWordKey)
+      );
+      const live = new Set(
+        [...this._livePersonalRowsByLower().values()].map((row) => dictionaryWordKey(row.word))
+      );
       const revive = this.db.prepare(
         "UPDATE custom_dictionary SET deleted_at = NULL, fallback_retired = 0, sync_status = CASE WHEN cloud_id IS NULL THEN 'pending' ELSE 'synced' END WHERE id = ?"
       );
       const revived = [];
       this.db.transaction(() => {
-        for (const lower of this._normalizeDictionaryWords(words).keys()) {
-          const row = byLower.get(lower);
+        for (const row of rows) {
+          const key = dictionaryWordKey(row.word);
           // A live row with the same word (re-added meanwhile) already covers it.
-          if (!row || live.has(lower)) continue;
+          if (!requested.has(key) || live.has(key)) continue;
           revive.run(row.id);
+          live.add(key);
           revived.push(row.word);
         }
       })();

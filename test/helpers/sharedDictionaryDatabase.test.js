@@ -674,3 +674,42 @@ test("replaceSharedDictionaryHides reports what it changed, and hides are indexe
     .map((row) => row.name);
   assert.ok(indexes.includes("idx_shared_dictionary_hides_workspace"));
 });
+
+test("moved Unicode fallbacks retire and revive using the shared spelling", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  db.applyDictionaryChanges({ add: ["Cafe\u0301"] });
+  db.markDictionaryWordsShared(["Cafe\u0301"], "2026-10-20T12:00:00.000Z");
+
+  assert.deepEqual(db.retireMovedDictionaryWords(["CAF\u00c9"]), { retired: ["Cafe\u0301"] });
+  assert.deepEqual(db.getDictionary(), []);
+  assert.deepEqual(db.reviveRetiredDictionaryWords(["Caf\u00e9"]), { revived: ["Cafe\u0301"] });
+  assert.deepEqual(db.getDictionary(), ["Cafe\u0301"]);
+});
+
+test("Unicode retirement covers every legacy spelling and revival avoids duplicates", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  db.applyDictionaryChanges({ add: ["Cafe\u0301", "Caf\u00e9"] });
+  db.markDictionaryWordsShared(["Cafe\u0301", "Caf\u00e9"], "2026-10-20T12:00:00.000Z");
+
+  assert.deepEqual(
+    db.retireMovedDictionaryWords(["Caf\u00e9"]).retired.sort(),
+    ["Cafe\u0301", "Caf\u00e9"].sort()
+  );
+  assert.deepEqual(db.getDictionary(), []);
+  assert.equal(db.reviveRetiredDictionaryWords(["Caf\u00e9"]).revived.length, 1);
+  assert.equal(db.getDictionary().length, 1);
+});
+
+test("Unicode revival keeps an equivalent personal word re-added meanwhile", (t) => {
+  const db = createDb(t);
+  if (!db) return;
+  db.applyDictionaryChanges({ add: ["Cafe\u0301"] });
+  db.markDictionaryWordsShared(["Cafe\u0301"], "2026-10-20T12:00:00.000Z");
+  db.retireMovedDictionaryWords(["Cafe\u0301"]);
+  db.applyDictionaryChanges({ add: ["Caf\u00e9"] });
+
+  assert.deepEqual(db.reviveRetiredDictionaryWords(["Cafe\u0301"]), { revived: [] });
+  assert.deepEqual(db.getDictionary(), ["Caf\u00e9"]);
+});

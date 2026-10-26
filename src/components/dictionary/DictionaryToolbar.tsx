@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpDown, Check, RefreshCw, Search, X } from "../icons";
 import { Input } from "../ui/input";
@@ -15,6 +15,7 @@ import { SORT_LABEL_KEYS, type SortKey } from "./dictionaryViewModel";
 const SORT_KEYS = Object.keys(SORT_LABEL_KEYS) as SortKey[];
 
 interface DictionaryToolbarProps {
+  listPicker?: ReactNode;
   search: string;
   onSearchChange: (search: string) => void;
   sort: SortKey;
@@ -82,6 +83,7 @@ function ToolButton({
 }
 
 export function DictionaryToolbar({
+  listPicker,
   search,
   onSearchChange,
   sort,
@@ -93,7 +95,13 @@ export function DictionaryToolbar({
 }: DictionaryToolbarProps): ReactElement {
   const { t, i18n } = useTranslation();
   const [searchOpen, setSearchOpen] = useState(search !== "");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
   const [, setLabelTick] = useState(0);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
 
   useEffect(() => {
     if (!showSync) return;
@@ -104,19 +112,45 @@ export function DictionaryToolbar({
   const closeSearch = (): void => {
     setSearchOpen(false);
     onSearchChange("");
+    searchButtonRef.current?.focus();
   };
 
   return (
-    <div className="flex items-center gap-1">
-      {searchOpen ? (
-        <div className="relative">
-          <Search
-            size={12}
-            className="pointer-events-none absolute start-2 top-1/2 -translate-y-1/2 text-foreground/40"
-          />
+    <div className="flex min-w-0 items-center justify-end gap-1">
+      {listPicker}
+      <div
+        className={cn(
+          "relative flex h-7 shrink-0 items-center rounded-md border transition-[width,border-color,background-color] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          searchOpen
+            ? "w-36 border-border/70 bg-card focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10 dark:border-white/10 dark:bg-surface-1 @[640px]/dictionary:w-44"
+            : "w-7 border-transparent"
+        )}
+      >
+        <Tooltip content={t("dictionary.shared.toolbar.search")}>
+          <button
+            ref={searchButtonRef}
+            type="button"
+            aria-label={t("dictionary.shared.toolbar.search")}
+            aria-expanded={searchOpen}
+            onClick={() => {
+              setSearchOpen(true);
+              searchInputRef.current?.focus();
+            }}
+            className={ICON_BUTTON_CLASS}
+          >
+            <Search size={14} />
+          </button>
+        </Tooltip>
+        <div
+          inert={!searchOpen}
+          className={cn(
+            "absolute inset-y-0 start-6 end-0 transition-opacity duration-100 motion-reduce:transition-none",
+            searchOpen ? "visible opacity-100" : "invisible opacity-0"
+          )}
+        >
           <Input
+            ref={searchInputRef}
             dir="auto"
-            autoFocus
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             onKeyDown={(event) => {
@@ -124,7 +158,7 @@ export function DictionaryToolbar({
             }}
             placeholder={t("dictionary.shared.toolbar.searchPlaceholder")}
             aria-label={t("dictionary.shared.toolbar.search")}
-            className="h-[26px] w-44 rounded-md ps-6 pe-6 text-xs"
+            className="input-inline h-[26px] w-full rounded-md border-0 bg-transparent py-0 ps-0 pe-6 text-xs hover:border-0 focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
           />
           <button
             type="button"
@@ -135,14 +169,7 @@ export function DictionaryToolbar({
             <X size={11} />
           </button>
         </div>
-      ) : (
-        <ToolButton
-          label={t("dictionary.shared.toolbar.search")}
-          onClick={() => setSearchOpen(true)}
-        >
-          <Search size={14} />
-        </ToolButton>
-      )}
+      </div>
 
       <DropdownMenu>
         <Tooltip content={t("dictionary.shared.toolbar.sort")}>

@@ -227,7 +227,7 @@ test("selectAppliedSharedEntries keeps ids of readable, non-hidden entries and i
   assert.deepEqual(ids({ entries, hiddenIds: [], meta: null }), []);
 });
 
-test("selectAppliedSharedWords gives the assistant only words that reach a prompt", () => {
+test("selectAppliedSharedWords annotates applied terms for the assistant", () => {
   const { selectAppliedSharedWords } = require("../../src/utils/sharedDictionaryHints.ts");
   const entries = [
     entry("e1", null, " Acme "),
@@ -236,8 +236,8 @@ test("selectAppliedSharedWords gives the assistant only words that reach a promp
     entry("e4", SPACE_A, "Hidden"),
   ];
   assert.deepEqual(selectAppliedSharedWords({ entries, hiddenIds: ["e4"], meta: meta() }), [
-    { id: "e1", word: "Acme" },
-    { id: "e3", word: "Kube" },
+    { id: "e1", word: "Acme", reachesPrompt: true },
+    { id: "e3", word: "Kube", reachesPrompt: true },
   ]);
 });
 

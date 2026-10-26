@@ -116,6 +116,14 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
   const { customDictionary, updateCustomDictionary, snippets } = useSettings();
   const { active: workspace } = useWorkspace();
   const { isSignedIn, user } = useAuth();
+  const workspaceId = workspace?.id ?? null;
+  const workspaceName = workspace?.name ?? "";
+  const sharingScope = useMemo(
+    () => ({ workspaceId, userId: user?.id ?? null, isSignedIn }),
+    [workspaceId, user?.id, isSignedIn]
+  );
+  const currentSharingScope = useRef(sharingScope);
+  currentSharingScope.current = sharingScope;
   const agentName = getAgentName();
 
   const status = useSharedDictionaryStore((state) => state.status);
@@ -147,7 +155,9 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
   const [shareRequest, setShareRequest] = useState<{
     words: string[];
     anchor: HTMLElement;
+    scope: typeof sharingScope;
   } | null>(null);
+  const liveShareRequest = shareRequest?.scope === sharingScope ? shareRequest : null;
   // Bottom padding the list keeps clear for the floating selection bar.
   const [selectionBarClearance, setSelectionBarClearance] = useState(56);
   // The list whose checkboxes show with nothing ticked yet ("Share from Personal").
@@ -194,8 +204,6 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
     useSharedDictionaryStore.getState().setRequestedList(null);
   }, [requestedList]);
 
-  const workspaceId = workspace?.id ?? null;
-  const workspaceName = workspace?.name ?? "";
   const access = resolveSharedAccessState({
     status,
     signedIn: isSignedIn,
@@ -275,6 +283,11 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
     setSelectModeList((current) => (current === openList ? current : null));
   }, [openList, clearTicked]);
 
+  useEffect(() => {
+    setShareRequest(null);
+    clearSelection();
+  }, [sharingScope, clearSelection]);
+
   // Esc clears from anywhere on the page. An open dialog or popover handles
   // Esc first and marks it handled, and a text field keeps it for itself.
   useEffect(() => {
@@ -291,10 +304,10 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
 
   const shareOptions = useMemo(
     () =>
-      shareRequest && snapshot?.meta
-        ? shareTargetsFor(shareRequest.words, snapshot, workspaceName, t)
+      liveShareRequest && snapshot?.meta
+        ? shareTargetsFor(liveShareRequest.words, snapshot, workspaceName, t)
         : [],
-    [shareRequest, snapshot, workspaceName, t]
+    [liveShareRequest, snapshot, workspaceName, t]
   );
   const canShare = access === "available" && !!snapshot?.meta && snapshot.meta.scopes.length > 0;
 
@@ -403,8 +416,11 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
   const shareRequested = async (
     targets: Parameters<typeof actions.shareWords>[1]
   ): Promise<void> => {
-    if (!shareRequest) return;
-    const shared = await actions.shareWords(shareRequest.words, targets);
+    // A confirmation retained by the popover must not cross account/workspace changes,
+    // including the render before the effect clears the pending request.
+    if (!liveShareRequest || liveShareRequest.scope !== currentSharingScope.current) return;
+    const shared = await actions.shareWords(liveShareRequest.words, targets);
+    if (liveShareRequest.scope !== currentSharingScope.current) return;
     setShareRequest(null);
     // Words that didn't go stay selected, so sharing them again is one click.
     if (shared) clearSelection();
@@ -542,7 +558,10 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
             onUnhide={(row) => void actions.setRowsHidden([row], false)}
             onDeleteForEveryone={(row) => actions.requestDeleteForEveryone([row])}
             onShare={
-              canShare ? (row, anchor) => setShareRequest({ words: [row.word], anchor }) : undefined
+              canShare
+                ? (row, anchor) =>
+                    setShareRequest({ words: [row.word], anchor, scope: sharingScope })
+                : undefined
             }
             selection={wordListSelection}
             readOnly={readOnlyList}
@@ -553,7 +572,7 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
     );
 
   return (
-    <Tabs value={tab} onValueChange={setTab} className="flex flex-col h-full">
+    <Tabs value={tab} onValueChange={setTab} className="@container/dictionary flex flex-col h-full">
       <ConfirmDialog
         open={confirmClear}
         onOpenChange={setConfirmClear}
@@ -578,12 +597,12 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
       />
 
       <ShareWordsPopover
-        open={shareRequest !== null}
+        open={liveShareRequest !== null}
         onOpenChange={(open) => {
           if (!open) setShareRequest(null);
         }}
-        anchor={shareRequest?.anchor ?? null}
-        words={shareRequest?.words ?? []}
+        anchor={liveShareRequest?.anchor ?? null}
+        words={liveShareRequest?.words ?? []}
         targets={shareOptions}
         onShare={shareRequested}
       />
@@ -591,10 +610,10 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
       <div
         className={cn(
           PAGE_CONTENT_WIDTH_CLASS,
-          "flex items-center justify-between gap-3 px-6 pt-6"
+          "flex flex-col items-stretch justify-between gap-3 px-6 pt-6 @[640px]/dictionary:flex-row @[640px]/dictionary:items-center"
         )}
       >
-        <TabsList variant="pill">
+        <TabsList variant="pill" className="shrink-0 self-start">
           <TabsTrigger value="dictionary" variant="pill">
             <NotebookPen size={17} />
             {t("dictionary.tabDictionary")}
@@ -606,6 +625,15 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
         </TabsList>
         {tab === "dictionary" && (
           <DictionaryToolbar
+            listPicker={
+              pickerShown ? (
+                <DictionaryListPicker
+                  entries={pickerEntries}
+                  selected={openList}
+                  onSelect={selectList}
+                />
+              ) : undefined
+            }
             search={search}
             onSearchChange={setSearch}
             sort={sort}
@@ -626,15 +654,7 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
         value="dictionary"
         className="flex-1 min-h-0 mt-0 overflow-y-auto"
       >
-        <div className={cn(PAGE_CONTENT_WIDTH_CLASS, "flex gap-5 px-6 py-5")}>
-          {pickerShown && (
-            <DictionaryListPicker
-              entries={pickerEntries}
-              selected={openList}
-              onSelect={selectList}
-            />
-          )}
-
+        <div className={cn(PAGE_CONTENT_WIDTH_CLASS, "px-6 py-5")}>
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             {lockedAccess && !readOnlyList ? (
               <SharedDictionaryLocked
@@ -750,11 +770,15 @@ export default function DictionaryView({ onUpgrade }: DictionaryViewProps): Reac
                             setShareRequest((current) =>
                               current
                                 ? null
-                                : { words: selectedPersonal.map((row) => row.word), anchor }
+                                : {
+                                    words: selectedPersonal.map((row) => row.word),
+                                    anchor,
+                                    scope: sharingScope,
+                                  }
                             )
                         : undefined
                     }
-                    shareOpen={shareRequest !== null}
+                    shareOpen={liveShareRequest !== null}
                     onHide={selectedShared.length > 0 ? () => void hideSelected() : undefined}
                     hideBusy={hidingSelected}
                     onClearanceChange={setSelectionBarClearance}

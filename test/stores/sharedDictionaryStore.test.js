@@ -125,12 +125,12 @@ test("a load from an older generation never publishes", async (t) => {
   const { generation } = ctx.useSharedDictionaryStore.getState();
   ctx.db.seed(W1, { entries: [cloudEntry(W1, "Orukeet")] });
 
-  await ctx.useSharedDictionaryStore.getState().load(W1, generation - 1);
+  assert.equal(await ctx.useSharedDictionaryStore.getState().load(W1, generation - 1), false);
   assert.deepEqual(ctx.hints().workspace, ["Qdrant"]);
-  await ctx.useSharedDictionaryStore.getState().load(W2, generation);
+  assert.equal(await ctx.useSharedDictionaryStore.getState().load(W2, generation), false);
   assert.deepEqual(ctx.hints().workspace, ["Qdrant"], "nor one for another workspace");
 
-  await ctx.useSharedDictionaryStore.getState().reload();
+  assert.equal(await ctx.useSharedDictionaryStore.getState().reload(), true);
   assert.deepEqual(ctx.hints().workspace, ["Qdrant", "Orukeet"]);
 });
 
@@ -318,7 +318,7 @@ test("the page's Sync stamps lastSyncedAt, even without a workspace, until the s
   const stamped = store().lastSyncedAt;
   assert.ok(Date.parse(stamped) >= before);
   // The page rereads the mirror whenever it opens; that keeps the stamp.
-  await store().reload();
+  assert.equal(await store().reload(), false, "no workspace mirror was loaded");
   assert.equal(store().lastSyncedAt, stamped);
 
   // A Sync that finishes after a workspace switch says nothing about the new one.
@@ -328,16 +328,39 @@ test("the page's Sync stamps lastSyncedAt, even without a workspace, until the s
   store().markSynced(started);
   assert.equal(store().lastSyncedAt, null);
   await flush();
-  assert.ok(store().lastSyncedAt, "the shared pass's own time");
+  assert.equal(store().lastSyncedAt, null, "loading a mirror does not prove a sync succeeded");
 
-  // An older pass time read later never rolls a newer Sync back.
+  // Mirror metadata is not evidence that both dictionaries finished syncing.
   store().markSynced(store().generation);
   const newer = store().lastSyncedAt;
   const read = harness.window.electronAPI.getSharedDictionary;
   harness.window.electronAPI.getSharedDictionary = async (id) => {
     const snapshot = await read(id);
-    return { ...snapshot, meta: { ...snapshot.meta, syncedAt: "2020-01-01T00:00:00.000Z" } };
+    return { ...snapshot, meta: { ...snapshot.meta, syncedAt: "2099-01-01T00:00:00.000Z" } };
   };
   await store().reload();
   assert.equal(store().lastSyncedAt, newer);
+});
+
+test("failed and missing mirror loads report false without changing hints or sync time", async (t) => {
+  const ctx = await setup(t);
+  const store = () => ctx.useSharedDictionaryStore.getState();
+  ctx.useWorkspaceStore.getState().setActiveWorkspaceId(W1);
+  await flush();
+  store().markSynced(store().generation);
+  const stamped = store().lastSyncedAt;
+  t.mock.method(console, "warn", () => {});
+  const read = t.mock.method(harness.window.electronAPI, "getSharedDictionary", async () => {
+    throw new Error("mirror unavailable");
+  });
+  assert.equal(await store().reload(), false);
+  read.mock.mockImplementation(async () => undefined);
+  assert.equal(await store().reload(), false);
+  assert.deepEqual(ctx.hints().workspace, ["Qdrant"]);
+  assert.equal(store().lastSyncedAt, stamped);
+
+  const oldGeneration = store().generation;
+  store().resetForAccountChange();
+  store().markSynced(oldGeneration);
+  assert.equal(store().lastSyncedAt, null, "the prior account cannot mark a new success");
 });

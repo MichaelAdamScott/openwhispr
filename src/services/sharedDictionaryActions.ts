@@ -15,6 +15,7 @@ import type {
   SharedDictionaryShareResponse,
 } from "../types/sharedDictionary";
 import logger from "../utils/logger";
+import { dictionaryWordKey } from "../utils/snippets";
 import { isTermLikeSharedWord } from "../utils/sharedDictionaryHints";
 
 // Writes to shared lists go online first and then apply the server's answer to
@@ -210,6 +211,12 @@ function captureActionScope(): ActionScope {
   };
 }
 
+function assertActionScope(scope: ActionScope): void {
+  if (!scope.isCurrent()) {
+    throw new SharedDictionaryActionError("network", "The account or workspace changed");
+  }
+}
+
 // The server already holds the write, so a failed or skipped local apply only
 // delays it until the next pass; it never turns an accepted write into a failure.
 async function applyAccepted(
@@ -241,10 +248,12 @@ async function applyAccepted(
 // After a write that can retire or revive the sharer's moved fallback: shows
 // a local change at once, and pulls the personal list either way, since the
 // server decides (it checks every workspace and follows renames).
-async function reconcilePersonal(changedLocally: boolean): Promise<void> {
+async function reconcilePersonal(scope: ActionScope, changedLocally: boolean): Promise<void> {
+  if (!scope.isCurrent()) return;
   if (changedLocally) {
     const api = requireApi();
     const stored = await api.getDictionary?.();
+    if (!scope.isCurrent()) return;
     if (stored) useSettingsStore.getState().applyCustomDictionaryFromExternal(stored);
     void api.broadcastDictionaryUpdated?.();
   }
@@ -270,12 +279,13 @@ async function retireFallbacks(
     const remaining = new Set<string>();
     for (const id of workspaces) {
       const snapshot = await api.getSharedDictionary(id);
+      if (!scope.isCurrent()) return;
       const hidden = new Set(snapshot.hiddenIds);
       for (const entry of snapshot.entries) {
-        if (!hidden.has(entry.cloudId)) remaining.add(entry.word.toLowerCase());
+        if (!hidden.has(entry.cloudId)) remaining.add(dictionaryWordKey(entry.word));
       }
     }
-    const candidates = words.filter((word) => !remaining.has(word.toLowerCase()));
+    const candidates = words.filter((word) => !remaining.has(dictionaryWordKey(word)));
     // With sync on, the server retires (or keeps) a synced fallback in the same
     // request and the pull below brings its answer; only words it can't know
     // about are retired here.
@@ -285,7 +295,7 @@ async function retireFallbacks(
             includeSynced: !syncService.canSync(),
           })
         : { retired: [] };
-    await reconcilePersonal(retired.length > 0);
+    await reconcilePersonal(scope, retired.length > 0);
   });
 }
 
@@ -296,7 +306,7 @@ async function reviveFallbacks(scope: ActionScope, words: string[]): Promise<voi
   await applyAccepted(scope, "fallback revival", async () => {
     const api = requireApi();
     const { revived } = (await api.reviveRetiredDictionaryWords?.(words)) ?? { revived: [] };
-    await reconcilePersonal(revived.length > 0);
+    await reconcilePersonal(scope, revived.length > 0);
   });
 }
 
@@ -376,6 +386,7 @@ export async function addSharedWords(
   let mirrorChanged = 0;
   for (const [index, batch] of chunks.entries()) {
     try {
+      assertActionScope(scope);
       const response = await SharedDictionaryService.create(workspaceId, target, batch);
       mirrorChanged += await applyAccepted(scope, "add", () =>
         applyEntries(workspaceId, response.created)
@@ -406,6 +417,7 @@ export async function editSharedWord(
   const scope = captureActionScope();
   let mirrorChanged = 0;
   try {
+    assertActionScope(scope);
     const entry = await SharedDictionaryService.update(workspaceId, entryId, sendable);
     mirrorChanged = await applyAccepted(scope, "edit", () => applyEntries(workspaceId, [entry]));
   } catch (error) {
@@ -421,15 +433,17 @@ export async function editSharedWord(
 // back beside the entries; otherwise the words would apply until the next
 // hides pass.
 async function restoreSharedWords(
+  scope: ActionScope,
   workspaceId: string,
   entryIds: string[],
   hiddenIds: Set<string>
 ): Promise<void> {
-  const scope = captureActionScope();
   let mirrorChanged = 0;
+  let restoredCount = 0;
   const restoredWords: string[] = [];
   try {
     for (const batch of chunk(entryIds)) {
+      assertActionScope(scope);
       const response = await SharedDictionaryService.restore(workspaceId, batch);
       // A conflict is a word someone re-added meanwhile; the list already has it.
       mirrorChanged += await applyAccepted(scope, "restore", async () => {
@@ -442,14 +456,20 @@ async function restoreSharedWords(
             updated_at: entry.updated_at,
             deleted_at: null,
           }));
-        return changed + (await applyHides(workspaceId, rehidden));
+        return (
+          changed +
+          (await applyAccepted(scope, "restore hides", () => applyHides(workspaceId, rehidden)))
+        );
       });
+      restoredCount += response.restored.length;
       restoredWords.push(
         ...response.restored.filter((entry) => !hiddenIds.has(entry.id)).map((entry) => entry.word)
       );
     }
   } catch (error) {
-    throw toSharedDictionaryActionError(error);
+    const failure = toSharedDictionaryActionError(error);
+    failure.appliedCount = restoredCount;
+    throw failure;
   } finally {
     await reviveFallbacks(scope, restoredWords);
     await refreshAfterWrite(workspaceId, mirrorChanged);
@@ -472,6 +492,7 @@ export async function deleteSharedWords(
   let mirrorChanged = 0;
   try {
     for (const batch of chunk(ids)) {
+      assertActionScope(scope);
       const response = await SharedDictionaryService.remove(workspaceId, batch);
       mirrorChanged += await applyAccepted(scope, "delete", () =>
         applyEntries(workspaceId, [], response.deletedIds)
@@ -485,7 +506,7 @@ export async function deleteSharedWords(
   await refreshAfterWrite(workspaceId, mirrorChanged);
 
   // Only ids the server actually deleted come back; ones already gone stay gone.
-  const undo = (): Promise<void> => restoreSharedWords(workspaceId, deleted, hidden);
+  const undo = (): Promise<void> => restoreSharedWords(scope, workspaceId, deleted, hidden);
   if (failure) {
     failure.appliedCount = deleted.length;
     if (deleted.length > 0) failure.undo = undo;
@@ -509,6 +530,7 @@ export async function setSharedWordsHidden(
   let mirrorChanged = 0;
   try {
     for (const batch of chunk(ids)) {
+      assertActionScope(scope);
       const response = await SharedDictionaryService.hide(workspaceId, batch, hidden);
       mirrorChanged += await applyAccepted(scope, "hide", () =>
         applyHides(workspaceId, response.hides)
@@ -545,12 +567,14 @@ function readShareRejections(
 // words, carrying no personal id for the server to compare. `demotedIds` are
 // the personal ids that went that way: the server never marked their rows.
 async function shareChunk(
+  scope: ActionScope,
   workspaceId: string,
   targets: ShareTarget[],
   personal: Array<{ id: string; word: string }>,
   plain: string[]
 ): Promise<{ response: SharedDictionaryShareResponse; demotedIds: Set<string> }> {
   try {
+    assertActionScope(scope);
     const response = await SharedDictionaryService.share(workspaceId, {
       targets,
       personal,
@@ -565,6 +589,7 @@ async function shareChunk(
       conflictIds.size === 0 || conflictIds.has(row.id);
     const demoted = personal.filter(conflicting);
     try {
+      assertActionScope(scope);
       const response = await SharedDictionaryService.share(workspaceId, {
         targets,
         personal: personal.filter((row) => !conflicting(row)),
@@ -614,6 +639,7 @@ export async function sharePersonalWords(
   let mirrorChanged = 0;
   for (const [index, batch] of chunks.entries()) {
     try {
+      assertActionScope(scope);
       const api = requireApi();
       const stored = (await api.getDictionaryEntriesByWords?.(batch)) ?? [];
       const byLower = new Map(stored.map((row) => [row.word.toLowerCase(), row]));
@@ -652,6 +678,7 @@ export async function sharePersonalWords(
       if (sent.length === 0) continue;
 
       const { response, demotedIds } = await shareChunk(
+        scope,
         workspaceId,
         uniqueTargets,
         personal,

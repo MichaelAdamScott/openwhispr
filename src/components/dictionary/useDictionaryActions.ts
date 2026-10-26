@@ -553,18 +553,19 @@ export function useDictionaryActions({
   const sync = async (): Promise<void> => {
     setSyncing(true);
     const { generation } = useSharedDictionaryStore.getState();
-    let failed = false;
     // The toolbar fires this without awaiting it, so a failure must not escape.
-    const logFailure = (error: unknown): void => {
-      failed = true;
+    const logFailure = (error: unknown): "failed" => {
       logger.warn("Dictionary sync failed", { error: (error as Error)?.message }, "dictionary");
+      return "failed";
     };
     try {
-      await Promise.all([
+      const results = await Promise.all([
         syncService.syncSharedDictionaryNow().catch(logFailure),
         syncService.syncDictionaryNow().catch(logFailure),
       ]);
-      if (!failed) useSharedDictionaryStore.getState().markSynced(generation);
+      if (results.includes("synced") && !results.includes("failed")) {
+        useSharedDictionaryStore.getState().markSynced(generation);
+      }
     } finally {
       setSyncing(false);
     }

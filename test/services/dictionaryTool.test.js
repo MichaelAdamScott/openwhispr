@@ -12,7 +12,7 @@ function harness(words, sharedWords = []) {
     actions: {
       getDictionary: () => words,
       updateDictionary: (changes) => calls.push(changes),
-      getSharedWords: async () => sharedWords,
+      getSharedWords: async () => sharedWords.map((word) => ({ reachesPrompt: true, ...word })),
       hideSharedWords: async (ids) => {
         hideCalls.push(ids);
       },
@@ -39,6 +39,143 @@ test("adds new words and removes existing ones case-insensitively in one call", 
     },
     displayText: 'Added "Parakeet", "Orukeet"; Removed "Parakeat"',
   });
+});
+
+function promptHarness(sharedWords, personalWords = [], snippets = []) {
+  const {
+    selectAppliedSharedWords,
+    selectSharedHintWords,
+  } = require("../../src/utils/sharedDictionaryHints.ts");
+  const snapshot = {
+    entries: sharedWords.map((word, index) => ({
+      cloudId: `shared-${index}`,
+      spaceId: null,
+      word,
+      addedByUserId: null,
+      createdAt: "2026-10-20T00:00:00.000Z",
+      updatedAt: "2026-10-20T00:00:00.000Z",
+    })),
+    hiddenIds: [],
+    meta: {
+      scopes: [
+        { space_id: null, name: "Workspace", member_count: 2, word_count: sharedWords.length },
+      ],
+      contributors: [],
+      paused: false,
+      syncedAt: "2026-10-20T00:00:00.000Z",
+    },
+  };
+  const settings = {
+    customDictionary: personalWords,
+    snippets,
+    sharedDictionaryHints: selectSharedHintWords(snapshot),
+  };
+  const state = harness(personalWords);
+  state.actions.getSharedWords = async () => selectAppliedSharedWords(snapshot, settings);
+  return { ...state, settings };
+}
+
+test("a shared word excluded by all prompt caps can be added to Personal", async () => {
+  const { createUpdateDictionaryTool } = await load();
+  const {
+    getKeytermDictionaryWords,
+    getKeywordDictionaryWords,
+    getLlmDictionaryWords,
+  } = require("../../src/utils/snippets.ts");
+  const words = [...Array.from({ length: 200 }, (_, index) => `Term${index}`), "Tailword"];
+  const { actions, calls, settings } = promptHarness(words);
+  assert.equal(getKeytermDictionaryWords(settings).includes("Tailword"), false);
+  assert.equal(getKeywordDictionaryWords(settings).includes("Tailword"), false);
+  assert.equal(
+    getLlmDictionaryWords(settings, { includeTriggers: true }).includes("Tailword"),
+    false
+  );
+  assert.equal(
+    getLlmDictionaryWords(settings, { includeTriggers: false }).includes("Tailword"),
+    false
+  );
+
+  const result = await createUpdateDictionaryTool(actions).execute({ add: ["Tailword"] });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(calls, [{ add: ["Tailword"], remove: [] }]);
+});
+
+test("a shared word excluded by the character cap can be added to Personal", async () => {
+  const { createUpdateDictionaryTool } = await load();
+  const words = [
+    ...Array.from({ length: 100 }, (_, index) => `Term${index}${"x".repeat(40)}`),
+    "Tailword",
+  ];
+  const { actions, calls } = promptHarness(words);
+  const result = await createUpdateDictionaryTool(actions).execute({ add: ["Tailword"] });
+  assert.equal(result.success, true);
+  assert.deepEqual(calls, [{ add: ["Tailword"], remove: [] }]);
+});
+
+test("shared words reaching either STT or LLM still count as already present", async () => {
+  const { createUpdateDictionaryTool } = await load();
+  const {
+    getKeywordDictionaryWords,
+    getLlmDictionaryWords,
+  } = require("../../src/utils/snippets.ts");
+  for (const [words, target, inStt, inLlm] of [
+    [Array.from({ length: 150 }, (_, index) => `Term${index}`), "Term149", false, true],
+    [
+      Array.from({ length: 80 }, (_, index) => `Term${index}${"x".repeat(40)}`),
+      `Term79${"x".repeat(40)}`,
+      true,
+      false,
+    ],
+  ]) {
+    const { actions, calls, settings } = promptHarness(words);
+    assert.equal(getKeywordDictionaryWords(settings).includes(target), inStt);
+    assert.equal(
+      getLlmDictionaryWords(settings, { includeTriggers: true }).includes(target),
+      inLlm
+    );
+    const result = await createUpdateDictionaryTool(actions).execute({ add: [target] });
+    assert.equal(result.success, false);
+    assert.deepEqual(calls, []);
+    assert.match(result.displayText, /Already in the dictionary/);
+  }
+});
+
+test("removing a cap-excluded shared word still hides every shared copy", async () => {
+  const { createUpdateDictionaryTool } = await load();
+  const words = [
+    ...Array.from({ length: 200 }, (_, index) => `Term${index}`),
+    "Tailword",
+    "TAILWORD",
+  ];
+  const { actions, hideCalls } = promptHarness(words);
+  const result = await createUpdateDictionaryTool(actions).execute({ remove: ["tailword"] });
+  assert.equal(result.success, true);
+  assert.deepEqual(hideCalls, [["shared-200", "shared-201"]]);
+});
+
+test("a shared word reaching only the keyterm path still counts as present", async () => {
+  const { createUpdateDictionaryTool } = await load();
+  const {
+    getKeytermDictionaryWords,
+    getKeywordDictionaryWords,
+    getLlmDictionaryWords,
+  } = require("../../src/utils/snippets.ts");
+  const words = [
+    ...Array.from({ length: 100 }, (_, index) => `Term${index}${"x".repeat(50)}`),
+    "Tailword",
+  ];
+  const { actions, calls, settings } = promptHarness(words);
+  assert.equal(getKeytermDictionaryWords(settings).includes("Tailword"), true);
+  assert.equal(getKeywordDictionaryWords(settings).includes("Tailword"), false);
+  assert.equal(
+    getLlmDictionaryWords(settings, { includeTriggers: true }).includes("Tailword"),
+    false
+  );
+  const result = await createUpdateDictionaryTool(actions).execute({ add: ["Tailword"] });
+  assert.equal(result.success, false);
+  assert.deepEqual(calls, []);
+  assert.match(result.displayText, /Already in the dictionary/);
 });
 
 test("words already present are reported instead of re-added", async () => {

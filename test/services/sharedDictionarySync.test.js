@@ -299,7 +299,7 @@ test("a refusal answered after the account changed leaves the old mirror and acc
   assert.equal(ctx.useSharedDictionaryStore.getState().status, "ready");
 });
 
-test("a workspace without the plan is read until its mirror says paused, then left alone", async (t) => {
+test("a paused workspace probes again and discovers an external upgrade", async (t) => {
   const ctx = await setup(t);
   const { cloud, db, service } = ctx;
   const workspace = {
@@ -320,8 +320,8 @@ test("a workspace without the plan is read until its mirror says paused, then le
   assert.deepEqual(ctx.hints(), { space: [], workspace: [] });
 
   await service.syncSharedDictionaryNow();
-  assert.equal(cloud.requestsTo(LIST).length, 1, "no list request");
-  assert.equal(cloud.requestsTo(HIDES).length, 1, "no hides request");
+  assert.equal(cloud.requestsTo(LIST).length, 2, "paused lists are revalidated");
+  assert.equal(cloud.requestsTo(HIDES).length, 2);
   const { snapshot, status } = ctx.useSharedDictionaryStore.getState();
   assert.equal(status, "ready");
   assert.equal(snapshot.meta.paused, true, "the page still shows the paused words");
@@ -331,11 +331,16 @@ test("a workspace without the plan is read until its mirror says paused, then le
   );
   assert.deepEqual(ctx.hints(), { space: [], workspace: [] });
 
-  // An upgrade the workspace list knows about syncs again.
-  ctx.useWorkspaceStore.setState({ workspaces: [{ ...workspace, plan: "business" }] });
+  // Billing changed elsewhere; only the server knows about the upgrade.
+  const { WorkspacesService } = require("../../src/services/WorkspacesService.ts");
+  const refresh = t.mock.method(WorkspacesService, "list", async () => [
+    { ...workspace, plan: "business" },
+  ]);
   cloud.workspace(W1).paused = false;
   await service.syncSharedDictionaryNow();
-  assert.equal(cloud.requestsTo(LIST).length, 2);
+  assert.equal(cloud.requestsTo(LIST).length, 3);
+  assert.equal(refresh.mock.callCount(), 1);
+  assert.equal(ctx.useWorkspaceStore.getState().workspaces[0].plan, "business");
   assert.deepEqual(ctx.hints().workspace, ["Qdrant"]);
   assert.equal(db.callsNamed("replaceSharedDictionary").length, 1);
 });
@@ -1297,6 +1302,144 @@ test("a personal pull that stops advancing saves the applied pages and ends the 
   await ctx.service.syncDictionaryNow();
   const next = query(ctx.cloud.requestsTo("/api/dictionary/list").at(-1));
   assert.equal(next.since, "2026-10-12T00:00:00.000Z");
+});
+
+test("failed hides sync cannot advance the toolbar time through a mirror reload", async (t) => {
+  const ctx = await setup(t);
+  t.mock.method(console, "error", () => {});
+  ctx.cloud.add(W1, ["Qdrant"]);
+  ctx.useSharedDictionaryStore.setState({ lastSyncedAt: "2000-01-01T00:00:00.000Z" });
+  ctx.cloud.failNext(HIDES, { status: 503, code: "UNAVAILABLE" });
+  assert.equal(await ctx.service.syncSharedDictionaryNow(), "failed");
+  assert.ok(ctx.changes().length, "the changed event asks the page to reload applied entries");
+  await ctx.useSharedDictionaryStore.getState().reload();
+  assert.equal(ctx.useSharedDictionaryStore.getState().lastSyncedAt, "2000-01-01T00:00:00.000Z");
+});
+
+test("manual shared sync reports a failed mirror reload", async (t) => {
+  const ctx = await setup(t);
+  t.mock.method(console, "warn", () => {});
+  const read = harness.window.electronAPI.getSharedDictionary;
+  let reads = 0;
+  harness.window.electronAPI.getSharedDictionary = async (...args) => {
+    reads += 1;
+    if (reads === 2) throw new Error("mirror unavailable");
+    return read(...args);
+  };
+  assert.equal(await ctx.service.syncSharedDictionaryNow(), "failed");
+});
+
+test("an external upgrade retries a failed billing refresh on the next shared pass", async (t) => {
+  const ctx = await setup(t);
+  t.mock.method(console, "error", () => {});
+  const workspace = {
+    id: W1,
+    name: "Acme",
+    role: "member",
+    plan: "pro",
+    status: "active",
+    stripe_subscription_id: null,
+  };
+  ctx.useWorkspaceStore.setState({ loaded: true, error: false, workspaces: [workspace] });
+  ctx.cloud.add(W1, ["Qdrant"]);
+  ctx.cloud.workspace(W1).paused = true;
+  await ctx.service.syncSharedDictionaryNow();
+  const { WorkspacesService } = require("../../src/services/WorkspacesService.ts");
+  let attempts = 0;
+  t.mock.method(WorkspacesService, "list", async () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("offline");
+    return [{ ...workspace, plan: "business" }];
+  });
+  ctx.cloud.workspace(W1).paused = false;
+  assert.equal(await ctx.service.syncSharedDictionaryNow(), "failed");
+  assert.equal(ctx.useWorkspaceStore.getState().error, true);
+  assert.equal(await ctx.service.syncSharedDictionaryNow(), "synced");
+  assert.equal(attempts, 2);
+  assert.equal(ctx.useWorkspaceStore.getState().error, false);
+  assert.equal(ctx.useWorkspaceStore.getState().workspaces[0].plan, "business");
+  assert.deepEqual(ctx.hints().workspace, ["Qdrant"]);
+});
+
+for (const outcome of ["success", "shared failure", "personal failure"]) {
+  test(`background dictionary sync timestamp reflects ${outcome}`, async (t) => {
+    const ctx = await setupPersonal(t);
+    t.mock.method(console, "error", () => {});
+    // Keep unrelated phases out of this regression; both dictionary phases use real code.
+    t.mock.method(ctx.service, "syncSpaces", async () => true);
+    for (const phase of [
+      "syncFolders",
+      "syncNotes",
+      "syncConversations",
+      "syncTranscriptions",
+      "syncSnippets",
+      "syncAnalytics",
+    ]) {
+      t.mock.method(ctx.service, phase, async () => {});
+    }
+    const previousSync = "2000-01-01T00:00:00.000Z";
+    ctx.useSharedDictionaryStore.setState({ lastSyncedAt: previousSync });
+    ctx.cloud.add(W1, ["Qdrant"]);
+    if (outcome === "shared failure") {
+      ctx.cloud.failNext(HIDES, { status: 503, code: "UNAVAILABLE" });
+    } else if (outcome === "personal failure") {
+      ctx.cloud.failNext("/api/dictionary/list", { status: 503, code: "UNAVAILABLE" });
+    }
+    const started = Date.now();
+    await ctx.service.syncAll(true);
+    // The changed event can reload partial mirror writes after a failed background pass.
+    await ctx.useSharedDictionaryStore.getState().reload();
+    assert.equal(ctx.cloud.requestsTo(LIST).length, 1);
+    assert.equal(ctx.cloud.requestsTo("/api/dictionary/list").length, 1);
+    const finishedAt = ctx.useSharedDictionaryStore.getState().lastSyncedAt;
+    if (outcome === "success") {
+      assert.ok(Date.parse(finishedAt) >= started, "a completed pass publishes its time");
+    } else {
+      assert.equal(finishedAt, previousSync, "an incomplete pass preserves the prior success");
+    }
+  });
+}
+
+test("manual shared sync distinguishes success, failure, and skipped work", async (t) => {
+  const ctx = await setup(t);
+  t.mock.method(console, "error", () => {});
+  assert.equal(await ctx.service.syncSharedDictionaryNow(), "synced");
+  ctx.cloud.failNext(LIST, { status: 503, code: "UNAVAILABLE" });
+  assert.equal(await ctx.service.syncSharedDictionaryNow(), "failed");
+  const signedOut = await setup(t, { signedIn: false });
+  assert.equal(await signedOut.service.syncSharedDictionaryNow(), "skipped");
+});
+
+for (const operation of ["list", "batch-create", "update", "delete"]) {
+  test(`manual personal sync reports a failed ${operation}`, async (t) => {
+    const ctx = await setupPersonal(t, {
+      pending:
+        operation === "batch-create"
+          ? [personalRow()]
+          : operation === "update"
+            ? [personalRow({ cloud_id: "cloud-piha" })]
+            : [],
+    });
+    t.mock.method(console, "error", () => {});
+    if (operation === "delete") {
+      harness.window.electronAPI.getPendingDictionaryDeletes = async () => [
+        personalRow({ cloud_id: "cloud-piha" }),
+      ];
+    }
+    const request = harness.window.electronAPI.cloudApiRequest;
+    harness.window.electronAPI.cloudApiRequest = async (args) =>
+      args.path.split("?")[0] === `/api/dictionary/${operation}`
+        ? { success: false, status: 503, code: "UNAVAILABLE", error: "Unavailable" }
+        : request(args);
+    assert.equal(await ctx.service.syncDictionaryNow(), "failed");
+  });
+}
+
+test("manual personal sync reports successful and skipped passes", async (t) => {
+  const ctx = await setupPersonal(t);
+  assert.equal(await ctx.service.syncDictionaryNow(), "synced");
+  ctx.service.syncing = true;
+  assert.equal(await ctx.service.syncDictionaryNow(), "skipped");
 });
 
 // Last: startAutoSync's subscription lives as long as the workspace store, so

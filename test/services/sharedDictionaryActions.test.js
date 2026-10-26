@@ -15,6 +15,11 @@ const SPACE = "33333333-3333-4333-8333-333333333333";
 const SHARE = "/api/shared-dictionary/share";
 const CREATE = "/api/shared-dictionary/create";
 
+function changeAccount() {
+  const { useSharedDictionaryStore } = require("../../src/stores/sharedDictionaryStore.ts");
+  useSharedDictionaryStore.getState().resetForAccountChange();
+}
+
 let entrySeq = 0;
 function entry(word, spaceId = null) {
   entrySeq += 1;
@@ -920,4 +925,194 @@ test("with sync on, a synced fallback is left for the server to retire", async (
 
   assert.deepEqual(ctx.retireOptions, [{ includeSynced: false }]);
   assert.equal(ctx.counts.personalSyncs, 1, "the pull brings the server's answer");
+});
+
+for (const operation of ["add", "share"]) {
+  test(`${operation} stops after the accepted batch when the account changes`, async (t) => {
+    const personal = syncedPersonal(201);
+    const ctx = setup(t, { personal });
+    const route = operation === "add" ? CREATE : SHARE;
+    ctx.on(route, (body) => {
+      changeAccount();
+      return operation === "add"
+        ? { created: body.words.map((word) => entry(word)), alreadyPresent: [] }
+        : acceptShare(body);
+    });
+
+    const words = personal.map((row) => row.word);
+    const result =
+      operation === "add"
+        ? await ctx.actions.addSharedWords(WS, null, words)
+        : await ctx.actions.sharePersonalWords(WS, [null], words);
+
+    assert.equal(ctx.requestsTo(route).length, 1, "no batch uses the next account");
+    assert.deepEqual(result.added ?? result.moved, words.slice(0, 200));
+    assert.deepEqual(result.failed, { words: ["Word200"], reason: "network" });
+  });
+}
+
+for (const operation of ["delete", "hide", "unhide"]) {
+  test(`${operation} preserves partial counts and stops at an account switch`, async (t) => {
+    const ctx = setup(t);
+    const rows = Array.from({ length: 201 }, (_, index) => entry(`Word${index}`));
+    ctx.db.seed(WS, { entries: rows });
+    const route = operation === "delete" ? DELETE : HIDE;
+    ctx.on(route, (body) => {
+      changeAccount();
+      return operation === "delete" ? { deletedIds: body.ids } : { hides: hideRows(body) };
+    });
+    ctx.on(RESTORE, () => ({ restored: [], conflicts: [] }));
+
+    let caught;
+    await assert.rejects(
+      () =>
+        operation === "delete"
+          ? ctx.actions.deleteSharedWords(
+              WS,
+              rows.map((row) => row.id)
+            )
+          : ctx.actions.setSharedWordsHidden(
+              WS,
+              rows.map((row) => row.id),
+              operation === "hide"
+            ),
+      (error) => {
+        caught = error;
+        return error.reason === "network" && error.appliedCount === 200;
+      }
+    );
+    assert.equal(ctx.requestsTo(route).length, 1);
+    if (operation === "delete") {
+      assert.equal(typeof caught.undo, "function");
+      await assert.rejects(caught.undo, (error) => error.reason === "network");
+      assert.equal(ctx.requestsTo(RESTORE).length, 0, "old undo keeps the original account scope");
+    }
+  });
+}
+
+test("delete undo stops between restore batches when the workspace changes", async (t) => {
+  const ctx = setup(t);
+  const rows = Array.from({ length: 201 }, (_, index) => entry(`Word${index}`));
+  ctx.db.seed(WS, { entries: rows });
+  ctx.on(DELETE, (body) => ({ deletedIds: body.ids }));
+  const { useWorkspaceStore } = require("../../src/stores/workspaceStore.ts");
+  useWorkspaceStore.getState().setActiveWorkspaceId(WS);
+  ctx.on(RESTORE, (body) => {
+    useWorkspaceStore.getState().setActiveWorkspaceId("22222222-2222-4222-8222-222222222222");
+    return { restored: rows.filter((row) => body.ids.includes(row.id)), conflicts: [] };
+  });
+  t.after(() => useWorkspaceStore.getState().resetForAccountChange());
+
+  const { undo } = await ctx.actions.deleteSharedWords(
+    WS,
+    rows.map((row) => row.id)
+  );
+  await assert.rejects(undo, (error) => error.reason === "network" && error.appliedCount === 200);
+  assert.equal(ctx.requestsTo(RESTORE).length, 1);
+});
+
+for (const operation of ["share", "delete", "hide"]) {
+  test(`${operation} checks scope after reading local rows`, async (t) => {
+    const ctx = setup(t, { personal: syncedPersonal(1) });
+    const api = harnessWindow().electronAPI;
+    const method = operation === "share" ? "getDictionaryEntriesByWords" : "getSharedDictionary";
+    const original = api[method];
+    api[method] = async (...args) => {
+      const result = await original(...args);
+      changeAccount();
+      return result;
+    };
+    const route = operation === "share" ? SHARE : operation === "delete" ? DELETE : HIDE;
+    ctx.on(route, (body) =>
+      operation === "share"
+        ? acceptShare(body)
+        : operation === "delete"
+          ? { deletedIds: body.ids }
+          : { hides: hideRows(body) }
+    );
+
+    if (operation === "share") {
+      const result = await ctx.actions.sharePersonalWords(WS, [null], ["Word0"]);
+      assert.deepEqual(result.failed, { words: ["Word0"], reason: "network" });
+    } else {
+      await assert.rejects(
+        () =>
+          operation === "delete"
+            ? ctx.actions.deleteSharedWords(WS, ["entry-1"])
+            : ctx.actions.setSharedWordsHidden(WS, ["entry-1"], true),
+        (error) => error.reason === "network" && error.appliedCount === 0
+      );
+    }
+    assert.equal(ctx.requestsTo(route).length, 0);
+  });
+}
+
+test("share conflict retry cannot cross an account boundary", async (t) => {
+  const ctx = setup(t, { personal: syncedPersonal(1) });
+  ctx.on(SHARE, (body, call) => {
+    if (call > 0) return acceptShare(body);
+    changeAccount();
+    return failure(409, "SHARED_DICTIONARY_PERSONAL_CHANGED");
+  });
+
+  const result = await ctx.actions.sharePersonalWords(WS, [null], ["Word0"]);
+
+  assert.equal(ctx.requestsTo(SHARE).length, 1);
+  assert.deepEqual(result.failed, { words: ["Word0"], reason: "network" });
+  assert.deepEqual(result.moved, []);
+});
+
+for (const operation of ["delete", "hide"]) {
+  test(`${operation} keeps a fallback when an equivalent Unicode copy still applies`, async (t) => {
+    const ctx = setup(t, {
+      personal: [{ word: "Caf\u00e9", sharedAt: "2026-10-20", cloudId: null }],
+    });
+    const rows = [entry("Caf\u00e9"), entry("Cafe\u0301", SPACE)];
+    ctx.db.seed(WS, { entries: rows });
+    ctx.on(DELETE, (body) => ({ deletedIds: body.ids }));
+    ctx.on(HIDE, (body) => ({ hides: hideRows(body) }));
+
+    if (operation === "delete") await ctx.actions.deleteSharedWords(WS, [rows[0].id]);
+    else await ctx.actions.setSharedWordsHidden(WS, [rows[0].id], true);
+
+    assert.deepEqual(ctx.retires, []);
+    assert.deepEqual(ctx.personalWords(), ["Caf\u00e9"]);
+  });
+}
+
+test("fallback retirement stops if its mirror read outlives the account", async (t) => {
+  const ctx = setup(t, { personal: movedPersonal() });
+  const row = entry("Qdrant");
+  ctx.db.seed(WS, { entries: [row] });
+  ctx.on(DELETE, (body) => ({ deletedIds: body.ids }));
+  const api = harnessWindow().electronAPI;
+  const original = api.getSharedDictionary;
+  let reads = 0;
+  api.getSharedDictionary = async (...args) => {
+    const result = await original(...args);
+    if (++reads === 2) changeAccount();
+    return result;
+  };
+
+  await ctx.actions.deleteSharedWords(WS, [row.id]);
+
+  assert.deepEqual(ctx.retires, []);
+  assert.ok(ctx.personalWords().includes("Qdrant"));
+});
+
+test("personal reconciliation does not publish an old account's pending read", async (t) => {
+  const ctx = setup(t, { personal: movedPersonal() });
+  const row = entry("Qdrant");
+  ctx.db.seed(WS, { entries: [row] });
+  ctx.on(DELETE, (body) => ({ deletedIds: body.ids }));
+  const api = harnessWindow().electronAPI;
+  api.getDictionary = async () => {
+    changeAccount();
+    return ["Old account word"];
+  };
+
+  await ctx.actions.deleteSharedWords(WS, [row.id]);
+
+  assert.equal(ctx.customDictionary().includes("Old account word"), false);
+  assert.equal(ctx.broadcasts(), 0);
 });

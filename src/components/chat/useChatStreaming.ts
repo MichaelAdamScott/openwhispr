@@ -74,7 +74,7 @@ async function readAppliedSharedWords(): Promise<SharedDictionaryWord[]> {
   try {
     const snapshot = await window.electronAPI?.getSharedDictionary?.(workspaceId);
     if (!snapshot) return [];
-    return selectAppliedSharedWords(snapshot);
+    return selectAppliedSharedWords(snapshot, getSettings());
   } catch (error) {
     // The assistant then treats shared words as absent rather than failing the call.
     logger.warn(

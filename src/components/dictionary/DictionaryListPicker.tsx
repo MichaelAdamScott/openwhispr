@@ -1,6 +1,14 @@
 import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { Lock } from "../icons";
+import { Check, ChevronDown, Lock } from "../icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
+import { Tooltip } from "../ui/tooltip";
 import { cn } from "../lib/utils";
 import type { ListKey } from "../../stores/sharedDictionaryStore";
 import type { PickerEntry } from "./dictionaryViewModel";
@@ -23,18 +31,17 @@ function PickerButton({
   const { t } = useTranslation();
   const nested = entry.key === "workspace" || entry.key.startsWith("space:");
   return (
-    <button
-      type="button"
+    <DropdownMenuItem
       data-list-key={entry.key}
+      role="menuitemradio"
+      aria-checked={selected}
       aria-current={selected ? "true" : undefined}
-      onClick={() => onSelect(entry.key)}
+      textValue={entry.label}
+      onSelect={() => onSelect(entry.key)}
       className={cn(
-        "flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-start text-xs transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+        "flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-xs",
         nested && "ps-4",
-        selected
-          ? "bg-card text-foreground shadow-sm dark:bg-surface-2"
-          : "text-foreground/55 hover:bg-foreground/4 hover:text-foreground/80 dark:hover:bg-white/5",
+        selected && "bg-muted",
         entry.locked && !selected && "opacity-60"
       )}
     >
@@ -51,7 +58,10 @@ function PickerButton({
           <span className="shrink-0 tabular-nums text-foreground/40">{entry.count}</span>
         )
       )}
-    </button>
+      <span className="w-3 shrink-0">
+        {selected && <Check size={12} className="text-primary" aria-hidden="true" />}
+      </span>
+    </DropdownMenuItem>
   );
 }
 
@@ -61,6 +71,7 @@ export function DictionaryListPicker({
   onSelect,
 }: DictionaryListPickerProps): ReactElement {
   const { t } = useTranslation();
+  const selectedLabel = entries.find((entry) => entry.key === selected)?.label;
   const inGroup = (group: PickerEntry["group"]): PickerEntry[] =>
     entries.filter((entry) => entry.group === group);
   const renderEntry = (entry: PickerEntry): ReactElement => (
@@ -73,22 +84,41 @@ export function DictionaryListPicker({
   );
 
   return (
-    <nav className="flex w-[168px] shrink-0 flex-col gap-0.5 border-e border-foreground/8 pe-3 dark:border-white/8">
-      {inGroup("top").map(renderEntry)}
-      {inGroup("shared").length > 0 && (
-        <>
-          <p className="px-2 pt-3 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground/40">
-            {t("dictionary.shared.group")}
-          </p>
-          {inGroup("shared").map(renderEntry)}
-          {inGroup("bottom").length > 0 && (
-            <>
-              <div className="my-2 h-px bg-foreground/8 dark:bg-white/8" />
-              {inGroup("bottom").map(renderEntry)}
-            </>
-          )}
-        </>
-      )}
-    </nav>
+    <DropdownMenu>
+      <Tooltip content={selectedLabel}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={selectedLabel}
+            className="me-1 flex h-7 min-w-0 max-w-44 items-center gap-2 rounded-md border border-border/70 bg-card px-2 text-xs text-foreground transition-colors hover:border-border-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 dark:border-white/10 dark:bg-surface-1"
+          >
+            <span dir="auto" className="min-w-0 truncate">
+              {selectedLabel}
+            </span>
+            <ChevronDown size={12} className="shrink-0 text-foreground/50" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent
+        align="end"
+        className="max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-60 overflow-y-auto rounded-lg p-1"
+      >
+        {inGroup("top").map(renderEntry)}
+        {inGroup("shared").length > 0 && (
+          <>
+            <p className="px-2 pt-2 pb-1 text-[11px] text-foreground/45">
+              {t("dictionary.shared.group")}
+            </p>
+            {inGroup("shared").map(renderEntry)}
+          </>
+        )}
+        {inGroup("bottom").length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            {inGroup("bottom").map(renderEntry)}
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

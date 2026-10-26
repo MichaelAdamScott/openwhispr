@@ -1,3 +1,5 @@
+import { dictionaryWordKey } from "./dictionaryWordKey";
+export { dictionaryWordKey } from "./dictionaryWordKey";
 import type { SharedHintWords } from "./sharedDictionaryHints";
 
 export interface Snippet {
@@ -126,14 +128,6 @@ interface DictionaryHintSettings {
 
 function wordList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((w): w is string => typeof w === "string") : [];
-}
-
-/**
- * The key two dictionary spellings collide on: NFC (a decomposed "é" and a
- * precomposed one are the same word), trimmed and lowercased.
- */
-export function dictionaryWordKey(word: string): string {
-  return word.normalize("NFC").trim().toLowerCase();
 }
 
 // Shared words never repeat a word seen in a higher tier (or earlier in their

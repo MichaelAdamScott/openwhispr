@@ -26,7 +26,7 @@ const MOCKS = {
   "/hooks/useAuth": `
     export function useAuth() {
       const isSignedIn = globalThis.__signedIn ?? true;
-      return { isSignedIn, user: isSignedIn ? { id: "u-me" } : null };
+      return { isSignedIn, user: isSignedIn ? { id: globalThis.__userId ?? "u-me" } : null };
     }
   `,
   "/utils/agentName": `
@@ -68,8 +68,9 @@ const MOCKS = {
       syncSharedDictionaryNow: async () => {
         globalThis.__calls.push(["syncShared"]);
         if (globalThis.__results?.syncShared === "reject") throw new Error("offline");
+        return globalThis.__results?.syncShared ?? "synced";
       },
-      syncDictionaryNow: async () => { globalThis.__calls.push(["syncPersonal"]); },
+      syncDictionaryNow: async () => { globalThis.__calls.push(["syncPersonal"]); return globalThis.__results?.syncPersonal ?? "synced"; },
     };
   `,
   "/utils/logger": `
@@ -81,8 +82,8 @@ const MOCKS = {
     export const DropdownMenu = ({ children }) => children;
     export const DropdownMenuTrigger = ({ children }) => children;
     export const DropdownMenuContent = ({ children }) => createElement("div", null, children);
-    export const DropdownMenuItem = ({ children, onSelect }) =>
-      createElement("button", { onClick: onSelect, "data-menu-item": "" }, children);
+    export const DropdownMenuItem = ({ children, onSelect, textValue, ...props }) =>
+      createElement("button", { ...props, onClick: onSelect, "data-menu-item": "" }, children);
     export const DropdownMenuSeparator = () => null;
   `,
   // Radix Tabs and Dialog measure styles this DOM doesn't implement.
@@ -220,6 +221,9 @@ function setState(t, { initialStorage = {}, shared = {}, settings = {} } = {}) {
       "__shared",
       "__tabs",
       "__signedIn",
+      "__userId",
+      "__shareProps",
+      "__confirmPendingShare",
       "__ActionError",
     ]) {
       delete globalThis[key];
@@ -251,7 +255,7 @@ async function renderView(t, options = {}) {
   const vite = await createRendererServer(t, {
     cachePrefix: "openwhispr-dictionary-view-test-",
     noExternal: ["react-i18next"],
-    mockModules: MOCKS,
+    mockModules: { ...MOCKS, ...options.mockModules },
   });
   const { default: DictionaryView } = await vite.ssrLoadModule("/components/DictionaryView.tsx");
   // Loaded after the DOM is installed, so react-dom detects native input events.
@@ -343,6 +347,60 @@ test("renders picker entries with counts", async (t) => {
   assert.ok(container.textContent.includes("dictionary.shared.group"));
   // The page's snapshot is reread on mount: another window may have run the last pass.
   assert.ok(calls.some(([name]) => name === "reload"));
+});
+
+test("the grouping dropdown names the selected list and switches its words", async (t) => {
+  const { container } = await renderView(t);
+  assert.ok(
+    byAttribute(container, "aria-label", "dictionary.shared.allWords"),
+    "the dropdown names the current grouping"
+  );
+
+  await openList(container, `space:${ENGINEERING}`);
+  const trigger = byAttribute(container, "aria-label", "Engineering");
+  assert.equal(trigger?.tagName, "BUTTON");
+  assert.ok(trigger.textContent.includes("Engineering"));
+  assert.ok(rowFor(container, "Qdrant"));
+  assert.equal(rowFor(container, "MEDDICC"), null);
+
+  await openList(container, "personal");
+  assert.ok(byAttribute(container, "aria-label", "dictionary.shared.personal"));
+  assert.ok(rowFor(container, "OpenWhispr"));
+  assert.equal(rowFor(container, "Qdrant"), null);
+});
+
+test("closing search restores all words and returns keyboard focus to its button", async (t) => {
+  const { container } = await renderView(t);
+  const searchButton = () =>
+    findElement(
+      container,
+      (node) =>
+        node.tagName === "BUTTON" &&
+        node.getAttribute("aria-label") === "dictionary.shared.toolbar.search"
+    );
+  const searchInput = () =>
+    findElement(
+      container,
+      (node) =>
+        node.tagName === "INPUT" &&
+        node.getAttribute("aria-label") === "dictionary.shared.toolbar.search"
+    );
+  await click(searchButton());
+  assert.ok(globalThis.document.activeElement === searchInput(), "search receives keyboard focus");
+  await type(searchInput(), "Qdrant");
+  assert.ok(rowFor(container, "Qdrant"));
+  assert.equal(rowFor(container, "OpenWhispr"), null);
+
+  await React.act(async () => searchInput().dispatchEvent(domEvent("keydown", { key: "Escape" })));
+  assert.ok(rowFor(container, "OpenWhispr"));
+  assert.ok(globalThis.document.activeElement === searchButton(), "Escape returns focus to search");
+
+  await click(searchButton());
+  assert.equal(searchInput().value, "");
+  await type(searchInput(), "missing-word");
+  await click(byAttribute(container, "aria-label", "dictionary.shared.toolbar.closeSearch"));
+  assert.ok(rowFor(container, "Qdrant"));
+  assert.ok(globalThis.document.activeElement === searchButton(), "close returns focus to search");
 });
 
 test("without the shared dictionary the page is Personal alone, with Clear all and Export", async (t) => {
@@ -1476,6 +1534,92 @@ test("a Delete for everyone left open is withdrawn when the workspace changes", 
   );
 });
 
+for (const change of ["workspace", "account"]) {
+  test(`a pending Share is withdrawn when the ${change} changes`, async (t) => {
+    const { container, calls, rerender } = await renderView(t);
+    await openList(container, "personal");
+    await click(checkboxFor(container, "OpenWhispr"));
+    await click(barButton(container, "dictionary.shared.selection.shareWith"));
+    const popover = () => byAttribute(container, "data-popover");
+    const destination = () =>
+      findElement(
+        popover(),
+        (node) =>
+          node.getAttribute?.("role") === "checkbox" &&
+          node.textContent.startsWith("dictionary.shared.everyoneAt")
+      );
+    await click(destination());
+    assert.equal(destination().getAttribute("aria-checked"), "true");
+
+    if (change === "workspace") {
+      globalThis.__workspace = { ...globalThis.__workspace, id: "ws-b", name: "Beta" };
+      globalThis.__shared = { ...globalThis.__shared, workspaceId: "ws-b" };
+    } else {
+      globalThis.__userId = "u-other";
+    }
+    await rerender();
+    const confirm = popover() && buttonWithText(popover(), "dictionary.shared.actions.share");
+    if (confirm) await click(confirm);
+    assert.deepEqual(
+      calls.filter(([name]) => name === "sharePersonalWords"),
+      []
+    );
+    assert.equal(popover(), null, "the old share request is closed");
+    assert.deepEqual(checkedWords(container), [], "the old personal selection is cleared");
+
+    await click(
+      byAttribute(
+        container,
+        "aria-label",
+        named("dictionary.shared.actions.shareWord", "OpenWhispr")
+      )
+    );
+    assert.equal(
+      destination().getAttribute("aria-checked"),
+      "false",
+      "new requests start unticked"
+    );
+    assert.ok(isDisabled(buttonWithText(popover(), "dictionary.shared.actions.share")));
+  });
+}
+
+test("stale Share callbacks cannot run during or after a workspace change", async (t) => {
+  const { container, calls, rerender } = await renderView(t, {
+    mockModules: {
+      "/dictionary/ShareWordsPopover": `
+        import { useLayoutEffect } from "react";
+        export function ShareWordsPopover(props) {
+          globalThis.__shareProps = props;
+          useLayoutEffect(() => {
+            if (globalThis.__confirmPendingShare) {
+              globalThis.__confirmPendingShare = false;
+              void props.onShare([null]);
+            }
+          });
+          return null;
+        }
+      `,
+    },
+  });
+  await openList(container, "personal");
+  await click(
+    byAttribute(container, "aria-label", named("dictionary.shared.actions.shareWord", "OpenWhispr"))
+  );
+  const staleConfirm = globalThis.__shareProps.onShare;
+  globalThis.__confirmPendingShare = true;
+  globalThis.__workspace = { ...globalThis.__workspace, id: "ws-b", name: "Beta" };
+  await rerender();
+  await React.act(async () => staleConfirm([null]));
+  globalThis.__workspace = { ...globalThis.__workspace, id: "ws", name: "Acme" };
+  await rerender();
+  await React.act(async () => staleConfirm([null]));
+  assert.deepEqual(
+    calls.filter(([name]) => name === "sharePersonalWords"),
+    []
+  );
+  assert.equal(globalThis.__shareProps.open, false);
+});
+
 test("the remembered add target only applies in the workspace it was picked in", async (t) => {
   const { container, rerender } = await renderView(t, {
     initialStorage: { dictionaryAddTarget: JSON.stringify({ workspaceId: "ws", target: null }) },
@@ -1727,6 +1871,20 @@ test("Sync records when it finished, and a failed one doesn't", async (t) => {
     calls.filter(([name]) => name === "markSynced"),
     [["markSynced", 0]]
   );
+
+  globalThis.__results.syncShared = "failed";
+  await click(syncButton());
+  assert.equal(calls.filter(([name]) => name === "markSynced").length, 1);
+
+  globalThis.__results.syncShared = "synced";
+  globalThis.__results.syncPersonal = "failed";
+  await click(syncButton());
+  assert.equal(calls.filter(([name]) => name === "markSynced").length, 1);
+
+  globalThis.__results.syncShared = "skipped";
+  globalThis.__results.syncPersonal = "skipped";
+  await click(syncButton());
+  assert.equal(calls.filter(([name]) => name === "markSynced").length, 1);
 
   globalThis.__results.syncShared = "reject";
   await click(syncButton());
