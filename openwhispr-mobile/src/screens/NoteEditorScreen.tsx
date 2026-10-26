@@ -799,10 +799,19 @@ export default function NoteEditorScreen({
     );
   }, []);
 
-  const { state: processingState, runAction } = useActionProcessing({
+  const {
+    state: processingState,
+    runAction,
+    cancel: cancelAction,
+  } = useActionProcessing({
     onSuccess: handleEnhanceSuccess,
     onError: handleEnhanceError,
   });
+
+  useEffect(() => {
+    // Android consent ends with this note, owner or processing selection.
+    if (Platform.OS === 'android') return cancelAction;
+  }, [aiContext, cancelAction]);
 
   const handleDictationComplete = useCallback(
     (text: string) => {

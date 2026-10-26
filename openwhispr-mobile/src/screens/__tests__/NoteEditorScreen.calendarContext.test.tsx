@@ -658,6 +658,7 @@ describe('NoteEditorScreen generated meeting context', () => {
       expect(generateNoteTitle).toHaveBeenCalledWith(
         '# Synthetic large text editing check\n\n## Saved at 200 text',
         expect.anything(),
+        expect.objectContaining({ aborted: false }),
       );
     } finally {
       Platform.OS = originalPlatform;
@@ -2203,6 +2204,81 @@ describe('Android delayed AI consent', () => {
   afterEach(() => {
     Platform.OS = originalPlatform;
     alertSpy.mockRestore();
+  });
+
+  it.each(['mode', 'routing', 'account', 'privacy', 'unmount'] as const)(
+    'aborts an in-flight note action when its %s context changes',
+    async (change) => {
+      let resolve!: (value: { text: string; model: string }) => void;
+      jest.mocked(ReasoningService.processText).mockReturnValueOnce(
+        new Promise((r) => {
+          resolve = r;
+        }),
+      );
+      const screen = render(<NoteEditorScreen />);
+      await act(async () => fireEvent.press(screen.getByTestId('run-action-1')));
+      expect(ReasoningService.processText).toHaveBeenCalledTimes(1);
+      const request = jest.mocked(ReasoningService.processText).mock.calls[0][0];
+      if (change === 'mode') {
+        mockProcessingModeState.activeMode = 'private';
+      } else if (change === 'routing') {
+        mockConfigState.config.inference = { notes: { mode: 'local' } };
+      } else if (change === 'account') {
+        mockAuthState.user = { id: 'other-user', email: 'other@example.com', emailVerified: true };
+      } else if (change === 'privacy') {
+        mockNote = { ...mockNote, isPrivate: 1 };
+        mockNotesState.notes = [mockNote];
+      }
+      if (change === 'unmount') screen.unmount();
+      else screen.rerender(<NoteEditorScreen />);
+      expect(request.signal?.aborted).toBe(true);
+      mockUpdateNote.mockClear();
+      await act(async () => resolve({ text: 'Obsolete action result', model: 'test' }));
+      expect(mockUpdateNote).not.toHaveBeenCalled();
+      expect(generateNoteTitle).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not cancel a pending action for an unrelated language change', async () => {
+    let resolve!: (value: { text: string; model: string }) => void;
+    jest.mocked(ReasoningService.processText).mockReturnValueOnce(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    const screen = render(<NoteEditorScreen />);
+    await act(async () => fireEvent.press(screen.getByTestId('run-action-1')));
+    const request = jest.mocked(ReasoningService.processText).mock.calls[0][0];
+    mockConfigState.config.preferredLanguage = 'de';
+    screen.rerender(<NoteEditorScreen />);
+    expect(request.signal?.aborted).not.toBe(true);
+    await act(async () => resolve({ text: 'Current result', model: 'test' }));
+    expect(mockUpdateNote).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ enhancedContent: 'Current result' }),
+    );
+    delete mockConfigState.config.preferredLanguage;
+  });
+
+  it('preserves the existing iOS in-flight behavior when the processing mode changes', async () => {
+    Platform.OS = 'ios';
+    let resolve!: (value: { text: string; model: string }) => void;
+    jest.mocked(ReasoningService.processText).mockReturnValueOnce(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    const screen = render(<NoteEditorScreen />);
+    await act(async () => fireEvent.press(screen.getByTestId('run-action-1')));
+    const request = jest.mocked(ReasoningService.processText).mock.calls[0][0];
+    mockProcessingModeState.activeMode = 'private';
+    screen.rerender(<NoteEditorScreen />);
+    expect(request.signal?.aborted).not.toBe(true);
+    await act(async () => resolve({ text: 'iOS result', model: 'test' }));
+    expect(mockUpdateNote).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ enhancedContent: 'iOS result' }),
+    );
   });
 
   it.each(['note', 'account', 'unmount', 'privacy', 'routing'] as const)(

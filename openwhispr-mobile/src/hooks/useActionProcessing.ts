@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
 import { ReasoningService } from '@/services/reasoning/ReasoningService';
 import { useConfigStore } from '@/store/useConfigStore';
@@ -39,13 +39,27 @@ export function useActionProcessing({ onSuccess, onError }: UseActionProcessingO
   const [state, setState] = useState<ProcessingState>('idle');
   const [actionName, setActionName] = useState('');
   const processingRef = useRef(false);
-  const cancelledRef = useRef(false);
+  const requestRef = useRef<AbortController | null>(null);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    },
+    [],
+  );
 
   const runAction = useCallback(
     async (action: Action, noteContent: string, options: RunActionOptions = {}) => {
       if (processingRef.current || options.isCurrent?.() === false) return;
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
       processingRef.current = true;
-      cancelledRef.current = false;
+      const controller = new AbortController();
+      requestRef.current = controller;
+      const isCurrent = () =>
+        requestRef.current === controller &&
+        !controller.signal.aborted &&
+        options.isCurrent?.() !== false;
 
       setActionName(action.name);
       setState('processing');
@@ -72,9 +86,10 @@ export function useActionProcessing({ onSuccess, onError }: UseActionProcessingO
           systemPrompt,
           temperature: 0.3,
           routing: options.routing,
+          signal: controller.signal,
         });
 
-        if (cancelledRef.current || options.isCurrent?.() === false) return;
+        if (!isCurrent()) return;
 
         const enhancedContent =
           Platform.OS === 'android' && isDefaultGenerateNotesAction(action)
@@ -89,31 +104,40 @@ export function useActionProcessing({ onSuccess, onError }: UseActionProcessingO
 
         let generatedTitle: string | undefined;
         if ((cfg?.autoGenerateNoteTitle ?? true) && options.shouldGenerateTitle?.() !== false) {
-          const title = await generateNoteTitle(enhancedContent, options.routing);
-          if (cancelledRef.current || options.isCurrent?.() === false) return;
+          const title = await generateNoteTitle(
+            enhancedContent,
+            options.routing,
+            controller.signal,
+          );
+          if (!isCurrent()) return;
           if (title) generatedTitle = title;
         }
 
         setState('success');
         onSuccess(enhancedContent, actionPrompt, generatedTitle);
 
-        setTimeout(() => {
-          setState('idle');
+        successTimerRef.current = setTimeout(() => {
+          if (requestRef.current === controller) setState('idle');
         }, 600);
       } catch (e) {
-        if (cancelledRef.current || options.isCurrent?.() === false) return;
+        if (!isCurrent()) return;
         setState('idle');
         onError(e instanceof Error ? e.message : 'Enhancement failed', e);
       } finally {
-        if (options.isCurrent?.() === false) setState('idle');
-        processingRef.current = false;
+        // A cancelled request may settle after its replacement has already started.
+        if (requestRef.current === controller) {
+          if (options.isCurrent?.() === false) setState('idle');
+          processingRef.current = false;
+        }
       }
     },
     [onSuccess, onError],
   );
 
   const cancel = useCallback(() => {
-    cancelledRef.current = true;
+    if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    requestRef.current?.abort();
+    requestRef.current = null;
     processingRef.current = false;
     setState('idle');
   }, []);
