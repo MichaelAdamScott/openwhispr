@@ -15,6 +15,7 @@ const { getSafeTempDir } = require("./safeTempDir");
 const { createAbortError } = require("./abortError");
 const ParakeetWsServer = require("./parakeetWsServer");
 const CustomParakeetCli = require("./customParakeetCli");
+const { isBarkModel, getBarkModelPath } = require("./barkModelPaths");
 const { isCustomModelId, resolveModelPath } = require("./customLocalModels");
 const { splitAtPauses } = require("./parakeetSegmentation");
 const {
@@ -93,6 +94,7 @@ class ParakeetServerManager {
   }
 
   getModelPath(modelName) {
+    if (isBarkModel(modelName)) return getBarkModelPath(modelName);
     return isCustomModelId(modelName)
       ? resolveModelPath(modelName, "parakeet")
       : path.join(this.getModelsDir(), modelName);

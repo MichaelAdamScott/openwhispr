@@ -205,6 +205,7 @@ describe("modelDirUtils cache policy (#1279, #1399)", () => {
     assert.strictEqual(getCacheRoot(), override);
     assert.strictEqual(getModelsDirForService("whisper"), path.join(override, "whisper-models"));
     assert.strictEqual(getModelsDirForService("parakeet"), path.join(override, "parakeet-models"));
+    assert.strictEqual(getModelsDirForService("bark"), path.join(override, "bark-models"));
     assert.strictEqual(
       getModelsDirForService("diarization"),
       path.join(override, "diarization-models")
@@ -242,6 +243,8 @@ describe("modelDirUtils cache policy (#1279, #1399)", () => {
     const legacyRoot = path.join(home, ".cache", "openwhispr");
     fs.mkdirSync(path.join(legacyRoot, "whisper-models"), { recursive: true });
     fs.writeFileSync(path.join(legacyRoot, "whisper-models", "ggml-base.bin"), "model");
+    fs.mkdirSync(path.join(legacyRoot, "bark-models"), { recursive: true });
+    fs.writeFileSync(path.join(legacyRoot, "bark-models", "model.onnx"), "bark");
     fs.mkdirSync(path.join(legacyRoot, "models"), { recursive: true });
     fs.writeFileSync(path.join(legacyRoot, "models", "qwen.gguf"), "llm");
     fs.mkdirSync(path.join(legacyRoot, "qdrant-data"), { recursive: true });
@@ -256,6 +259,11 @@ describe("modelDirUtils cache policy (#1279, #1399)", () => {
       "model"
     );
     assert.strictEqual(fs.readFileSync(path.join(root, "models", "qwen.gguf"), "utf8"), "llm");
+    assert.strictEqual(
+      fs.readFileSync(path.join(root, "bark-models", "model.onnx"), "utf8"),
+      "bark"
+    );
+    assert.ok(!fs.existsSync(path.join(legacyRoot, "bark-models")));
     assert.ok(!fs.existsSync(path.join(legacyRoot, "whisper-models")));
     assert.ok(!fs.existsSync(path.join(legacyRoot, "models")));
     // qdrantManager and localEmbeddings read these from the home cache directly.

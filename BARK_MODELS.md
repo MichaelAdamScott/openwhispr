@@ -4,6 +4,13 @@ Open **Settings → Transcription → Local → Bark**, or choose Bark during in
 local-model setup. Download the model you want. OpenWhispr verifies every file's
 SHA-256 and tests the native decoder before reporting the model ready.
 
+Bark downloads are stored in `bark-models` under the OpenWhispr cache root
+(normally `%USERPROFILE%\.cache\openwhispr\bark-models` on Windows). Existing
+catalog Bark folders in `parakeet-models` move automatically when the updated
+app next loads the catalog. Model IDs and selections remain the same, and no
+download is needed. Existing destination folders are never overwritten; other
+model families are left in their current locations.
+
 | Model          | Transcript style                               | ONNX download                                                |
 | -------------- | ---------------------------------------------- | ------------------------------------------------------------ |
 | Bark 3.0       | Verbatim; keeps fillers and hesitations        | Available, about 685 MB                                      |

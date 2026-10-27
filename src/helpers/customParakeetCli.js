@@ -5,7 +5,7 @@ const { resolveBinaryPath, getAvailableParallelism } = require("../utils/serverU
 const { getSafeTempDir } = require("./safeTempDir");
 const { createAbortError } = require("./abortError");
 const { getModel, resolveModelPath } = require("./customLocalModels");
-const { getModelsDirForService } = require("./modelDirUtils");
+const { getBarkModelPath } = require("./barkModelPaths");
 const catalog = require("../models/modelRegistryData.json");
 
 // The upstream sherpa websocket executable binds all network interfaces. Custom
@@ -48,7 +48,7 @@ class CustomParakeetCli {
     if (!imported && builtIn?.transport !== "stdio") throw new Error("Unknown private ONNX model");
     const modelDir = imported
       ? resolveModelPath(modelName, "parakeet")
-      : path.join(getModelsDirForService("parakeet"), modelName);
+      : getBarkModelPath(modelName);
     const model = imported || builtIn;
     if (!Buffer.isBuffer(samples) || samples.length % 4)
       throw new Error("Expected float32 speech samples");

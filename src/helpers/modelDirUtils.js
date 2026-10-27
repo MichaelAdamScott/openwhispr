@@ -58,6 +58,7 @@ function getPreferredCacheRoot(homeCache) {
 const RELOCATED_SUBDIRS = [
   "whisper-models",
   "parakeet-models",
+  "bark-models",
   "diarization-models",
   "models",
   "custom-local-models",
