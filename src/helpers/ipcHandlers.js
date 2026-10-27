@@ -10,6 +10,7 @@ const debugLogger = require("./debugLogger");
 const { ANALYTICS_HISTORY_BACKFILL_VERSION } = require("./analytics");
 const { PARAKEET_UNSUPPORTED_OS_CODE } = require("./parakeetCapability");
 const { getModelType, isSherpaLocalProvider } = require("./parakeetModelInfo");
+const { isCustomModelId } = require("./customLocalModels");
 const { broadcastToWindows } = require("./windowBroadcast");
 const { openExternalUrl } = require("./externalUrlOpener");
 const { resolveFailedGpuBackends } = require("./whisper");
@@ -1042,6 +1043,7 @@ class IPCHandlers {
     if (isSherpaLocalProvider(options.provider)) {
       return this.parakeetManager.transcribeLocalParakeet(audioBuffer, options);
     }
+    if (isCustomModelId(options.model)) await this.parakeetManager.stopServer();
     return this.whisperManager.transcribeLocalWhisper(audioBuffer, {
       ...options,
       ...this._resolveWhisperVadOptions("noteRecording"),
@@ -1567,6 +1569,15 @@ class IPCHandlers {
   }
 
   setupHandlers() {
+    const { registerCustomLocalSpeechIpc } = require("./customLocalSpeechIpc");
+    registerCustomLocalSpeechIpc({
+      ipcMain,
+      dialog: require("electron").dialog,
+      BrowserWindow,
+      whisperManager: this.whisperManager,
+      parakeetManager: this.parakeetManager,
+    });
+
     ipcMain.handle("onboarding-set-window-mode", (_event, mode) =>
       this.windowManager.setOnboardingWindowMode(mode)
     );
@@ -3512,6 +3523,7 @@ class IPCHandlers {
         const vadOptions = skipVad
           ? { vadEnabled: false }
           : this._resolveWhisperVadOptions("dictation");
+        if (isCustomModelId(options.model)) await this.parakeetManager.stopServer();
         const result = await this.whisperManager.transcribeLocalWhisper(audioBlob, {
           ...requestOptions,
           ...vadOptions,
@@ -3652,6 +3664,7 @@ class IPCHandlers {
     });
 
     ipcMain.handle("whisper-server-start", async (event, modelName) => {
+      if (isCustomModelId(modelName)) await this.parakeetManager.stopServer();
       return this.whisperManager.startServer(
         modelName,
         this.whisperManager.resolveGpuStartOptions()
@@ -7009,6 +7022,7 @@ class IPCHandlers {
             });
           } else if (this.whisperManager?.serverManager?.isAvailable?.()) {
             const vadOptions = this._resolveWhisperVadOptions("noteRecording");
+            if (isCustomModelId(settings.whisperModel)) await this.parakeetManager.stopServer();
             result = await this.whisperManager.transcribeLocalWhisper(buffer, {
               model: settings.whisperModel,
               language,
@@ -8544,6 +8558,7 @@ class IPCHandlers {
           });
         } else {
           const vadOptions = this._resolveWhisperVadOptions("meeting");
+          if (isCustomModelId(meetingLocalModel)) await this.parakeetManager.stopServer();
           result = await this.whisperManager.transcribeLocalWhisper(wav, {
             model: meetingLocalModel,
             language: meetingLocalLanguage,
@@ -8856,6 +8871,7 @@ class IPCHandlers {
           });
         } else {
           const vadOptions = this._resolveWhisperVadOptions("dictation");
+          if (isCustomModelId(model)) await this.parakeetManager.stopServer();
           result = await this.whisperManager.transcribeLocalWhisper(wav, {
             model,
             language,

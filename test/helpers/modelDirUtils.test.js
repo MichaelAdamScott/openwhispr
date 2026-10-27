@@ -305,6 +305,27 @@ describe("modelDirUtils cache policy (#1279, #1399)", () => {
     assert.ok(!fs.existsSync(`${redirectedModels}.migrating`));
   });
 
+  it("preserves imported models when the Windows cache is redirected", () => {
+    const { home, legacyRoot, redirectedRoot } = createRedirectedWindowsFixture();
+    const relative = path.join(
+      "custom-local-models",
+      "custom-00000000-0000-0000-0000-000000000000"
+    );
+    writeModel(path.join(legacyRoot, relative), "model.bin", "imported weights");
+    writeModel(path.join(legacyRoot, relative), "openwhispr-import.json", "import metadata");
+    const { getCacheRoot } = loadFresh(home);
+    assert.strictEqual(getCacheRoot(), redirectedRoot);
+    assert.strictEqual(
+      fs.readFileSync(path.join(redirectedRoot, relative, "model.bin"), "utf8"),
+      "imported weights"
+    );
+    assert.strictEqual(
+      fs.readFileSync(path.join(redirectedRoot, relative, "openwhispr-import.json"), "utf8"),
+      "import metadata"
+    );
+    assert.ok(!fs.existsSync(path.join(legacyRoot, "custom-local-models")));
+  });
+
   it("keeps the legacy cache discoverable after a migration failure and retries later", () => {
     const { home, legacyRoot, redirectedRoot } = createRedirectedWindowsFixture();
     const legacyModels = path.join(legacyRoot, "whisper-models");

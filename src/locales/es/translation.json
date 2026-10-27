@@ -919,6 +919,24 @@
     "tinfoil": {
       "transportNote": "Tinfoil transmite con Voxtral Mini 4B y procesa por lotes con Voxtral Small 24B.",
       "docsLink": "Ver la documentación"
+    },
+    "customLocal": {
+      "title": "Your local speech models",
+      "description": "Import a model already on your computer. OpenWhispr keeps its own copy and runs it locally, with no server setup.",
+      "importWhisper": "Import Whisper .bin",
+      "importOnnx": "Import ONNX folder",
+      "barkConversion": "Importing a Bark 3.0 ONNX conversion (experimental). Add its required 0.25 seconds of leading silence.",
+      "onnxPerformance": "Imported ONNX models run on your CPU and reload for each recording, so larger models can be slower.",
+      "formats": "Supports whisper.cpp GGML .bin files and sherpa-onnx compatible NeMo transducer folders with encoder, decoder, joiner and tokens. Bark 3.0 needs a compatible ONNX conversion; original .bark, MLX and CoreML files cannot be imported.",
+      "busy": "Checking and loading the model locally. Large models may take a few minutes…",
+      "loadFailed": "Could not load imported models. Reopen this panel to try again.",
+      "importFailed": "Could not import this model. Check its format and try again.",
+      "removeFailed": "Could not remove this model. Try again after transcription finishes.",
+      "missing": "The selected imported model is unavailable. Import it again or choose another model.",
+      "streamingUnavailable": "Imported models transcribe after recording stops and are unavailable for live meeting transcription.",
+      "removeLabel": "Remove {{name}} from your local models",
+      "removeTitle": "Remove imported model?",
+      "removeDescription": "This deletes OpenWhispr’s imported copy. Your original files stay in place. If this model is selected, choose another model before transcribing."
     }
   },
   "hooks": {

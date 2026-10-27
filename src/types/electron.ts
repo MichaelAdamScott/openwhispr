@@ -1133,6 +1133,15 @@ export interface ParakeetCheckResult {
   minimumMacOSVersion?: string;
 }
 
+export interface CustomLocalSpeechModel {
+  id: string;
+  name: string;
+  engine: "whisper" | "parakeet";
+  provider: "whisper" | "nvidia";
+  sizeBytes: number;
+  leadingSilenceSeconds?: number;
+}
+
 export interface ParakeetModelResult {
   success: boolean;
   model: string;
@@ -2018,6 +2027,21 @@ declare global {
       ) => () => void;
       checkModelStatus: (modelName: string) => Promise<WhisperModelResult>;
       listWhisperModels: () => Promise<WhisperModelsListResult>;
+      listCustomLocalSpeechModels: () => Promise<{
+        success: boolean;
+        models: CustomLocalSpeechModel[];
+        error?: string;
+      }>;
+      importCustomLocalSpeechModel: (
+        engine: "whisper" | "parakeet",
+        options?: { leadingSilenceSeconds?: number }
+      ) => Promise<{
+        success: boolean;
+        canceled?: boolean;
+        model?: CustomLocalSpeechModel;
+        error?: string;
+      }>;
+      removeCustomLocalSpeechModel: (id: string) => Promise<{ success: boolean; error?: string }>;
       deleteWhisperModel: (modelName: string) => Promise<WhisperModelDeleteResult>;
       deleteAllWhisperModels: () => Promise<{
         success: boolean;

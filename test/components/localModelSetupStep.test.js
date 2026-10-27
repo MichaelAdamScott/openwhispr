@@ -234,6 +234,7 @@ async function createSetupHarness(
     );
   return {
     store: useSettingsStore,
+    customLibrary: () => findElement(tree, (node) => "onModelsChange" in (node.props ?? {})),
     pending,
     row,
     click,
@@ -277,6 +278,33 @@ async function createSetupHarness(
       return Boolean(button && !button.props.disabled);
     },
   };
+}
+
+for (const engine of ["whisper", "parakeet"]) {
+  test(`onboarding restores an imported ${engine} selection and waits for its local registry`, async (t) => {
+    const model = {
+      id: "custom-62aedb37-70e0-441b-b7fc-ddb651253487",
+      name: "Imported speech model",
+      engine,
+      provider: engine === "whisper" ? "whisper" : "nvidia",
+      sizeBytes: 1024,
+    };
+    const setup = await createSetupHarness(t, {
+      provider: model.provider,
+      selectedModel: model.id,
+      resumeState: { provider: model.provider, modelId: model.id },
+    });
+    assert.equal(setup.customLibrary().props.selectedModelId, model.id);
+    assert.equal(setup.ready(), false);
+    await React.act(async () => setup.customLibrary().props.onModelsChange([model]));
+    assert.equal(setup.ready(), true);
+    assert.equal(setup.canProceed(), true);
+    await React.act(async () => setup.customLibrary().props.onClearSelection(model));
+    assert.equal(setup.ready(), false);
+    assert.equal(setup.canProceed(), false);
+    const settings = setup.store.getState();
+    assert.equal(settings[engine === "whisper" ? "whisperModel" : "parakeetModel"], "");
+  });
 }
 
 for (const fixture of [

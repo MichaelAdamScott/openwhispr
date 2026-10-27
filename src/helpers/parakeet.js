@@ -17,6 +17,7 @@ const { getModelsDirForService } = require("./modelDirUtils");
 const { assertParakeetSupported, getParakeetCapability } = require("./parakeetCapability");
 
 const modelRegistryData = require("../models/modelRegistryData.json");
+const customLocalModels = require("./customLocalModels");
 const {
   getModelRuntime,
   getRequiredModelFiles,
@@ -53,6 +54,10 @@ class ParakeetManager {
   }
 
   validateModelName(modelName) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      customLocalModels.resolveModelPath(modelName, "parakeet");
+      return true;
+    }
     const validModels = getValidModelNames();
     if (!validModels.includes(modelName)) {
       throw new Error(
@@ -63,6 +68,8 @@ class ParakeetManager {
   }
 
   getModelPath(modelName) {
+    if (customLocalModels.isCustomModelId(modelName))
+      return customLocalModels.resolveModelPath(modelName, "parakeet");
     this.validateModelName(modelName);
     return path.join(this.getModelsDir(), modelName);
   }
@@ -99,7 +106,9 @@ class ParakeetManager {
         capability.supported &&
         isSherpaLocalProvider(localTranscriptionProvider) &&
         parakeetModel &&
-        this.serverManager.isAvailable(getModelRuntime(parakeetModel))
+        (customLocalModels.isCustomModelId(parakeetModel)
+          ? this.serverManager.customCli.isAvailable()
+          : this.serverManager.isAvailable(getModelRuntime(parakeetModel)))
       ) {
         if (this.serverManager.isModelDownloaded(parakeetModel)) {
           debugLogger.info("Pre-warming parakeet server", { model: parakeetModel });
@@ -231,8 +240,11 @@ class ParakeetManager {
 
   async transcribeLocalParakeet(audioBlob, options = {}) {
     const model = options.model || "parakeet-tdt-0.6b-v3";
+    this.validateModelName(model);
     assertParakeetSupported();
-    const serverAvailable = this.serverManager.isAvailable(getModelRuntime(model));
+    const serverAvailable = customLocalModels.isCustomModelId(model)
+      ? this.serverManager.customCli.isAvailable()
+      : this.serverManager.isAvailable(getModelRuntime(model));
 
     debugLogger.logSTTPipeline("transcribeLocalParakeet - start", {
       options,
@@ -323,6 +335,11 @@ class ParakeetManager {
   }
 
   async downloadParakeetModel(modelName, progressCallback = null) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      throw new Error(
+        "Imported models cannot be downloaded. Import the local folder again in Settings."
+      );
+    }
     this.validateModelName(modelName);
     assertParakeetSupported();
     const modelConfig = getParakeetModelConfig(modelName);
@@ -633,7 +650,13 @@ class ParakeetManager {
   }
 
   async listParakeetModels() {
-    const models = getValidModelNames();
+    const models = [
+      ...getValidModelNames(),
+      ...customLocalModels
+        .listModels()
+        .filter((model) => model.engine === "parakeet")
+        .map((model) => model.id),
+    ];
     const modelInfo = [];
 
     for (const model of models) {
@@ -649,6 +672,18 @@ class ParakeetManager {
   }
 
   async deleteParakeetModel(modelName) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      this.validateModelName(modelName);
+      await this.stopServer();
+      const model = customLocalModels.removeModel(modelName);
+      return {
+        model: modelName,
+        deleted: true,
+        freed_bytes: model.sizeBytes,
+        freed_mb: Math.round(model.sizeBytes / (1024 * 1024)),
+        success: true,
+      };
+    }
     const modelPath = this.getModelPath(modelName);
 
     if (fs.existsSync(modelPath)) {
@@ -678,8 +713,20 @@ class ParakeetManager {
     let deletedCount = 0;
 
     try {
+      for (const model of customLocalModels
+        .listModels()
+        .filter((model) => model.engine === "parakeet")) {
+        await this.deleteParakeetModel(model.id);
+        totalFreed += model.sizeBytes;
+        deletedCount++;
+      }
       if (!fs.existsSync(modelsDir)) {
-        return { success: true, deleted_count: 0, freed_bytes: 0, freed_mb: 0 };
+        return {
+          success: true,
+          deleted_count: deletedCount,
+          freed_bytes: totalFreed,
+          freed_mb: Math.round(totalFreed / (1024 * 1024)),
+        };
       }
 
       const entries = fs.readdirSync(modelsDir, { withFileTypes: true });
