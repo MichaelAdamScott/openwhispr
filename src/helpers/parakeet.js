@@ -17,7 +17,10 @@ const { getModelsDirForService } = require("./modelDirUtils");
 const { assertParakeetSupported, getParakeetCapability } = require("./parakeetCapability");
 
 const modelRegistryData = require("../models/modelRegistryData.json");
+const customLocalModels = require("./customLocalModels");
+const { isBarkModel, getBarkModelPath } = require("./barkModelPaths");
 const {
+  usesPrivateOnnxRuntime,
   getModelRuntime,
   getRequiredModelFiles,
   isSherpaLocalProvider,
@@ -28,6 +31,7 @@ function getParakeetModelConfig(modelName) {
   if (!modelInfo) return null;
   return {
     url: modelInfo.downloadUrl,
+    downloadFiles: modelInfo.downloadFiles,
     manifestUrl: modelInfo.manifestUrl,
     size: modelInfo.expectedSizeBytes || modelInfo.sizeMb * 1_000_000,
     expectedSizeBytes: modelInfo.expectedSizeBytes,
@@ -48,11 +52,15 @@ class ParakeetManager {
     this.serverManager = new ParakeetServerManager();
   }
 
-  getModelsDir() {
-    return getModelsDirForService("parakeet");
+  getModelsDir(modelName) {
+    return getModelsDirForService(isBarkModel(modelName) ? "bark" : "parakeet");
   }
 
   validateModelName(modelName) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      customLocalModels.resolveModelPath(modelName, "parakeet");
+      return true;
+    }
     const validModels = getValidModelNames();
     if (!validModels.includes(modelName)) {
       throw new Error(
@@ -63,7 +71,15 @@ class ParakeetManager {
   }
 
   getModelPath(modelName) {
+    if (customLocalModels.isCustomModelId(modelName))
+      return customLocalModels.resolveModelPath(modelName, "parakeet");
     this.validateModelName(modelName);
+    if (isBarkModel(modelName)) {
+      return getBarkModelPath(modelName, {
+        barkDir: this.getModelsDir(modelName),
+        legacyDir: this.getModelsDir(),
+      });
+    }
     return path.join(this.getModelsDir(), modelName);
   }
 
@@ -74,6 +90,16 @@ class ParakeetManager {
   // Cohere models keep their weights in encoder.int8.onnx.data; transducers in
   // encoder.int8.onnx. Used as the reported on-disk size of a model.
   _getModelWeightsSize(modelDir) {
+    const files = modelRegistryData.parakeetModels[path.basename(modelDir)]?.downloadFiles;
+    if (files) {
+      return files.reduce((total, file) => {
+        try {
+          return total + fs.statSync(path.join(modelDir, file.name)).size;
+        } catch {
+          return total;
+        }
+      }, 0);
+    }
     for (const file of ["encoder.int8.onnx.data", "encoder.int8.onnx"]) {
       try {
         return fs.statSync(path.join(modelDir, file)).size;
@@ -89,6 +115,7 @@ class ParakeetManager {
       this.isInitialized = true;
 
       await cleanupStaleDownloads(this.getModelsDir());
+      await cleanupStaleDownloads(this.getModelsDir("bark-3-0"));
 
       await this.logDependencyStatus();
 
@@ -99,7 +126,9 @@ class ParakeetManager {
         capability.supported &&
         isSherpaLocalProvider(localTranscriptionProvider) &&
         parakeetModel &&
-        this.serverManager.isAvailable(getModelRuntime(parakeetModel))
+        (usesPrivateOnnxRuntime(parakeetModel)
+          ? this.serverManager.customCli.isAvailable()
+          : this.serverManager.isAvailable(getModelRuntime(parakeetModel)))
       ) {
         if (this.serverManager.isModelDownloaded(parakeetModel)) {
           debugLogger.info("Pre-warming parakeet server", { model: parakeetModel });
@@ -231,8 +260,11 @@ class ParakeetManager {
 
   async transcribeLocalParakeet(audioBlob, options = {}) {
     const model = options.model || "parakeet-tdt-0.6b-v3";
+    this.validateModelName(model);
     assertParakeetSupported();
-    const serverAvailable = this.serverManager.isAvailable(getModelRuntime(model));
+    const serverAvailable = usesPrivateOnnxRuntime(model)
+      ? this.serverManager.customCli.isAvailable()
+      : this.serverManager.isAvailable(getModelRuntime(model));
 
     debugLogger.logSTTPipeline("transcribeLocalParakeet - start", {
       options,
@@ -323,12 +355,17 @@ class ParakeetManager {
   }
 
   async downloadParakeetModel(modelName, progressCallback = null) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      throw new Error(
+        "Imported models cannot be downloaded. Import the local folder again in Settings."
+      );
+    }
     this.validateModelName(modelName);
     assertParakeetSupported();
     const modelConfig = getParakeetModelConfig(modelName);
 
     const modelPath = this.getModelPath(modelName);
-    const modelsDir = this.getModelsDir();
+    const modelsDir = this.getModelsDir(modelName);
 
     if (this.serverManager.isModelDownloaded(modelName)) {
       return { model: modelName, downloaded: true, path: modelPath, success: true };
@@ -359,6 +396,37 @@ class ParakeetManager {
           `Not enough disk space to download and extract model. Need ~${Math.round((modelConfig.size * 2.5) / 1_000_000)}MB, ` +
             `only ${Math.round(spaceCheck.availableBytes / 1_000_000)}MB available.`
         );
+      }
+
+      if (modelConfig.downloadFiles) {
+        const { downloadBarkModel } = require("./barkModelDownload");
+        await downloadBarkModel({
+          modelName,
+          info: modelConfig,
+          modelsDir,
+          signal,
+          onProgress: (downloadedBytes, totalBytes) => {
+            Object.assign(downloadProcess, {
+              downloadedBytes,
+              totalBytes,
+              percentage: Math.round((downloadedBytes / totalBytes) * 100),
+            });
+            progressCallback?.({
+              type: "progress",
+              model: modelName,
+              downloaded_bytes: downloadedBytes,
+              total_bytes: totalBytes,
+              percentage: downloadProcess.percentage,
+            });
+          },
+          probe: async () => {
+            downloadProcess.phase = "installing";
+            progressCallback?.({ type: "installing", model: modelName, percentage: 100 });
+            return this.serverManager.startServer(modelName);
+          },
+        });
+        progressCallback?.({ type: "complete", model: modelName, percentage: 100 });
+        return { model: modelName, downloaded: true, path: modelPath, success: true };
       }
 
       let archiveReady = false;
@@ -633,7 +701,13 @@ class ParakeetManager {
   }
 
   async listParakeetModels() {
-    const models = getValidModelNames();
+    const models = [
+      ...getValidModelNames(),
+      ...customLocalModels
+        .listModels()
+        .filter((model) => model.engine === "parakeet")
+        .map((model) => model.id),
+    ];
     const modelInfo = [];
 
     for (const model of models) {
@@ -644,15 +718,29 @@ class ParakeetManager {
     return {
       models: modelInfo,
       cache_dir: this.getModelsDir(),
+      cache_dirs: { parakeet: this.getModelsDir(), bark: this.getModelsDir("bark-3-0") },
       success: true,
     };
   }
 
   async deleteParakeetModel(modelName) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      this.validateModelName(modelName);
+      await this.stopServer();
+      const model = customLocalModels.removeModel(modelName);
+      return {
+        model: modelName,
+        deleted: true,
+        freed_bytes: model.sizeBytes,
+        freed_mb: Math.round(model.sizeBytes / (1024 * 1024)),
+        success: true,
+      };
+    }
     const modelPath = this.getModelPath(modelName);
 
     if (fs.existsSync(modelPath)) {
       try {
+        if (isBarkModel(modelName)) await this.stopServer();
         const freedBytes = this._getModelWeightsSize(modelPath);
 
         fs.rmSync(modelPath, { recursive: true, force: true });
@@ -678,8 +766,27 @@ class ParakeetManager {
     let deletedCount = 0;
 
     try {
+      for (const model of customLocalModels
+        .listModels()
+        .filter((model) => model.engine === "parakeet")) {
+        await this.deleteParakeetModel(model.id);
+        totalFreed += model.sizeBytes;
+        deletedCount++;
+      }
+      for (const modelName of getValidModelNames().filter(isBarkModel)) {
+        if (!fs.existsSync(this.getModelPath(modelName))) continue;
+        const result = await this.deleteParakeetModel(modelName);
+        if (!result.success) throw new Error(result.error || "Could not remove Bark model");
+        totalFreed += result.freed_bytes;
+        deletedCount++;
+      }
       if (!fs.existsSync(modelsDir)) {
-        return { success: true, deleted_count: 0, freed_bytes: 0, freed_mb: 0 };
+        return {
+          success: true,
+          deleted_count: deletedCount,
+          freed_bytes: totalFreed,
+          freed_mb: Math.round(totalFreed / (1024 * 1024)),
+        };
       }
 
       const entries = fs.readdirSync(modelsDir, { withFileTypes: true });
@@ -714,6 +821,7 @@ class ParakeetManager {
       isPackaged: !!process.resourcesPath && !process.resourcesPath.includes("node_modules"),
       sherpaOnnx: { available: false, path: null },
       modelsDir: this.getModelsDir(),
+      barkModelsDir: this.getModelsDir("bark-3-0"),
       models: [],
     };
     const binaryPath =
@@ -723,13 +831,9 @@ class ParakeetManager {
     }
 
     try {
-      const modelsDir = this.getModelsDir();
-      if (fs.existsSync(modelsDir)) {
-        const entries = fs.readdirSync(modelsDir, { withFileTypes: true });
-        diagnostics.models = entries
-          .filter((e) => e.isDirectory() && this.serverManager.isModelDownloaded(e.name))
-          .map((e) => e.name);
-      }
+      diagnostics.models = getValidModelNames().filter((name) =>
+        this.serverManager.isModelDownloaded(name)
+      );
     } catch {}
 
     return diagnostics;

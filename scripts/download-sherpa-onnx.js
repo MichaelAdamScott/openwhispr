@@ -53,6 +53,8 @@ const BINARIES = {
     archiveName: `sherpa-onnx-v${SHERPA_ONNX_VERSION}-osx-universal2-shared-no-tts.tar.bz2`,
     binaryPath: "sherpa-onnx-offline-websocket-server",
     outputName: "sherpa-onnx-ws-darwin-arm64",
+    offlineBinaryPath: "sherpa-onnx-offline",
+    offlineOutputName: "sherpa-onnx-offline-darwin-arm64",
     onlineBinaryPath: "sherpa-onnx-online-websocket-server",
     onlineOutputName: "sherpa-onnx-online-ws-darwin-arm64",
     diarizeBinaryPath: "sherpa-onnx-offline-speaker-diarization",
@@ -63,6 +65,8 @@ const BINARIES = {
     archiveName: `sherpa-onnx-v${SHERPA_ONNX_VERSION}-osx-universal2-shared-no-tts.tar.bz2`,
     binaryPath: "sherpa-onnx-offline-websocket-server",
     outputName: "sherpa-onnx-ws-darwin-x64",
+    offlineBinaryPath: "sherpa-onnx-offline",
+    offlineOutputName: "sherpa-onnx-offline-darwin-x64",
     onlineBinaryPath: "sherpa-onnx-online-websocket-server",
     onlineOutputName: "sherpa-onnx-online-ws-darwin-x64",
     diarizeBinaryPath: "sherpa-onnx-offline-speaker-diarization",
@@ -74,6 +78,8 @@ const BINARIES = {
     archiveName: `sherpa-onnx-v${SHERPA_ONNX_VERSION}-win-x64-shared-MD-Release-no-tts.tar.bz2`,
     binaryPath: "sherpa-onnx-offline-websocket-server.exe",
     outputName: "sherpa-onnx-ws-win32-x64.exe",
+    offlineBinaryPath: "sherpa-onnx-offline.exe",
+    offlineOutputName: "sherpa-onnx-offline-win32-x64.exe",
     onlineBinaryPath: "sherpa-onnx-online-websocket-server.exe",
     onlineOutputName: "sherpa-onnx-online-ws-win32-x64.exe",
     diarizeBinaryPath: "sherpa-onnx-offline-speaker-diarization.exe",
@@ -84,6 +90,8 @@ const BINARIES = {
     archiveName: `sherpa-onnx-v${SHERPA_ONNX_VERSION}-linux-x64-shared-no-tts.tar.bz2`,
     binaryPath: "sherpa-onnx-offline-websocket-server",
     outputName: "sherpa-onnx-ws-linux-x64",
+    offlineBinaryPath: "sherpa-onnx-offline",
+    offlineOutputName: "sherpa-onnx-offline-linux-x64",
     onlineBinaryPath: "sherpa-onnx-online-websocket-server",
     onlineOutputName: "sherpa-onnx-online-ws-linux-x64",
     diarizeBinaryPath: "sherpa-onnx-offline-speaker-diarization",
@@ -335,6 +343,7 @@ async function downloadBinary(platformArch, config, isForce = false) {
 
   const outputPath = path.join(BIN_DIR, config.outputName);
   const onlineOutputPath = path.join(BIN_DIR, config.onlineOutputName);
+  const offlineOutputPath = path.join(BIN_DIR, config.offlineOutputName);
   const diarizeOutputPath = path.join(BIN_DIR, config.diarizeOutputName);
   const installMarkerPath = path.join(BIN_DIR, `.sherpa-onnx-${platformArch}.json`);
   const previousInstall = readInstallMarker(installMarkerPath);
@@ -344,9 +353,13 @@ async function downloadBinary(platformArch, config, isForce = false) {
 
   if (
     !isForce &&
-    isCompleteInstall(installMarkerPath, [outputPath, onlineOutputPath, diarizeOutputPath], {
-      platformArch,
-    })
+    isCompleteInstall(
+      installMarkerPath,
+      [outputPath, onlineOutputPath, offlineOutputPath, diarizeOutputPath],
+      {
+        platformArch,
+      }
+    )
   ) {
     console.log(`  ${platformArch}: Already exists (use --force to re-download)`);
     return true;
@@ -369,6 +382,7 @@ async function downloadBinary(platformArch, config, isForce = false) {
     for (const [binaryName, destPath] of [
       [config.binaryPath, outputPath],
       [config.onlineBinaryPath, onlineOutputPath],
+      [config.offlineBinaryPath, offlineOutputPath],
       [config.diarizeBinaryPath, diarizeOutputPath],
     ]) {
       if (!copyBinary(extractDir, binaryName, destPath, platformArch)) return false;
@@ -452,7 +466,7 @@ async function downloadBinary(platformArch, config, isForce = false) {
     const shippedLibraries = isWindowsTarget
       ? privatizeWindowsOnnxRuntime({
           binDir: BIN_DIR,
-          binaryPaths: [outputPath, onlineOutputPath, diarizeOutputPath],
+          binaryPaths: [outputPath, onlineOutputPath, offlineOutputPath, diarizeOutputPath],
           libraryNames: copiedLibraries,
         })
       : copiedLibraries;
@@ -514,6 +528,7 @@ async function main() {
       cleanupFiles(BIN_DIR, "sherpa-onnx", [
         `sherpa-onnx-ws-${args.platformArch}`,
         `sherpa-onnx-online-ws-${args.platformArch}`,
+        `sherpa-onnx-offline-${args.platformArch}`,
         `sherpa-onnx-diarize-${args.platformArch}`,
       ]);
     }

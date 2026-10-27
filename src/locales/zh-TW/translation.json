@@ -919,6 +919,29 @@
     "tinfoil": {
       "transportNote": "Tinfoil 串流轉錄使用 Voxtral Mini 4B，批次轉錄使用 Voxtral Small 24B。",
       "docsLink": "查看文件"
+    },
+    "customLocal": {
+      "title": "Your local speech models",
+      "description": "Import a model already on your computer. OpenWhispr keeps its own copy and runs it locally, with no server setup.",
+      "importWhisper": "Import Whisper .bin",
+      "importOnnx": "Import ONNX folder",
+      "barkConversion": "Bark Standard / Plus padding override (0.25 seconds). Leave unchecked for Bark Clean; model metadata is detected automatically.",
+      "onnxPerformance": "Imported ONNX models run on your CPU and reload for each recording, so larger models can be slower.",
+      "formats": "Supports whisper.cpp GGML .bin files and sherpa-onnx compatible NeMo transducer folders with encoder, decoder, joiner and tokens. Bark 3.0 needs a compatible ONNX conversion; original .bark, MLX and CoreML files cannot be imported.",
+      "busy": "Checking and loading the model locally. Large models may take a few minutes…",
+      "loadFailed": "Could not load imported models. Reopen this panel to try again.",
+      "importFailed": "Could not import this model. Check its format and try again.",
+      "removeFailed": "Could not remove this model. Try again after transcription finishes.",
+      "missing": "The selected imported model is unavailable. Import it again or choose another model.",
+      "streamingUnavailable": "Imported models transcribe after recording stops and are unavailable for live meeting transcription.",
+      "removeLabel": "Remove {{name}} from your local models",
+      "removeTitle": "Remove imported model?",
+      "removeDescription": "This deletes OpenWhispr’s imported copy. Your original files stay in place. If this model is selected, choose another model before transcribing."
+    },
+    "bark": {
+      "cleanHelp": "Choose Bark 3.0 Clean for dictation: it removes ums, uhs, false starts and repeated words. Standard and Plus preserve hesitations. Silent pauses do not need to appear in the text; cleanup does not edit your recording.",
+      "proUnavailable": "Bark 3.0 Pro: no verified compatible ONNX download is available yet. Original .bark and Core ML packages cannot run through this local engine.",
+      "exportNotice": "These are community ONNX conversions (about 685 MB each), not the original compressed downloads. Models run locally on CPU. Clean is recommended for readable dictation; results may vary."
     }
   },
   "hooks": {

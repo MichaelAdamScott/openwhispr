@@ -24,6 +24,7 @@ const EXE_NAMES = [
   "sherpa-onnx-ws-win32-x64.exe",
   "sherpa-onnx-online-ws-win32-x64.exe",
   "sherpa-onnx-diarize-win32-x64.exe",
+  "sherpa-onnx-offline-win32-x64.exe",
 ];
 
 test("removes only libraries from the previous sherpa-onnx install", () => {
@@ -68,7 +69,7 @@ test("Windows runtime extraction rejects a corrupt bzip2 archive", async (t) => 
 });
 
 // Mirrors what the 1.13.4 win-x64-shared-MD-Release archive yields after copying:
-// three exes that import onnxruntime.dll, the C API DLL that imports it too
+// four exes that import onnxruntime.dll, the C API DLL that imports it too
 // (upstream spells it in mixed case in some builds), the runtime itself, and
 // the providers DLL that does not reference it.
 function writeFakeBundle(dir) {
@@ -299,9 +300,12 @@ test("a failed macOS upgrade still removes obsolete libraries when retried", asy
   const binDir = path.join(root, "resources", "bin");
   fs.mkdirSync(binDir, { recursive: true });
   const config = BINARIES["darwin-arm64"];
-  const binaryPaths = [config.outputName, config.onlineOutputName, config.diarizeOutputName].map(
-    (name) => path.join(binDir, name)
-  );
+  const binaryPaths = [
+    config.outputName,
+    config.onlineOutputName,
+    config.diarizeOutputName,
+    config.offlineOutputName,
+  ].map((name) => path.join(binDir, name));
   const markerPath = path.join(binDir, ".sherpa-onnx-darwin-arm64.json");
   const obsoleteLibrary = path.join(binDir, "libonnxruntime.1.27.0.dylib");
   const cApiLibrary = path.join(binDir, "libsherpa-onnx-c-api.dylib");
@@ -356,6 +360,7 @@ test("a failed macOS upgrade still removes obsolete libraries when retried", asy
                 config.binaryPath,
                 config.onlineBinaryPath,
                 config.diarizeBinaryPath,
+                config.offlineBinaryPath,
               ]) {
                 fs.writeFileSync(path.join(extractDir, name), "new binary");
               }
@@ -443,14 +448,14 @@ test("a failed automatic Windows repair stays incomplete and retries DLL patchin
               assert.equal(command, "tar");
               const extractDir = path.resolve(cwd, args[args.indexOf("-C") + 1]);
               writeFakeBundle(extractDir);
-              [config.binaryPath, config.onlineBinaryPath, config.diarizeBinaryPath].forEach(
-                (name, index) => {
-                  fs.renameSync(
-                    path.join(extractDir, EXE_NAMES[index]),
-                    path.join(extractDir, name)
-                  );
-                }
-              );
+              [
+                config.binaryPath,
+                config.onlineBinaryPath,
+                config.diarizeBinaryPath,
+                config.offlineBinaryPath,
+              ].forEach((name, index) => {
+                fs.renameSync(path.join(extractDir, EXE_NAMES[index]), path.join(extractDir, name));
+              });
             },
           };
         }

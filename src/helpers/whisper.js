@@ -20,6 +20,7 @@ const {
 } = require("./modelDirUtils");
 
 const modelRegistryData = require("../models/modelRegistryData.json");
+const customLocalModels = require("./customLocalModels");
 
 const CACHE_TTL_MS = 30000;
 
@@ -223,6 +224,10 @@ class WhisperManager {
   }
 
   validateModelName(modelName) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      customLocalModels.resolveModelPath(modelName, "whisper");
+      return true;
+    }
     // Only allow known model names to prevent path traversal attacks
     const validModels = getValidModelNames();
     if (!validModels.includes(modelName)) {
@@ -232,6 +237,9 @@ class WhisperManager {
   }
 
   getModelPath(modelName) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      return customLocalModels.resolveModelPath(modelName, "whisper");
+    }
     this.validateModelName(modelName);
     const config = getWhisperModelConfig(modelName);
     return path.join(this.getModelsDir(), config.fileName);
@@ -700,6 +708,11 @@ class WhisperManager {
   }
 
   async downloadWhisperModel(modelName, progressCallback = null) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      throw new Error(
+        "Imported models cannot be downloaded. Import the local file again in Settings."
+      );
+    }
     this.validateModelName(modelName);
     const modelConfig = getWhisperModelConfig(modelName);
 
@@ -831,7 +844,13 @@ class WhisperManager {
   }
 
   async listWhisperModels() {
-    const models = getValidModelNames();
+    const models = [
+      ...getValidModelNames(),
+      ...customLocalModels
+        .listModels()
+        .filter((model) => model.engine === "whisper")
+        .map((model) => model.id),
+    ];
     const modelInfo = [];
 
     for (const model of models) {
@@ -847,6 +866,18 @@ class WhisperManager {
   }
 
   async deleteWhisperModel(modelName) {
+    if (customLocalModels.isCustomModelId(modelName)) {
+      this.validateModelName(modelName);
+      if (this.currentServerModel === modelName) await this.stopServer();
+      const model = customLocalModels.removeModel(modelName);
+      return {
+        model: modelName,
+        deleted: true,
+        freed_bytes: model.sizeBytes,
+        freed_mb: Math.round(model.sizeBytes / (1024 * 1024)),
+        success: true,
+      };
+    }
     const modelPath = this.getModelPath(modelName);
 
     if (fs.existsSync(modelPath)) {
@@ -870,8 +901,20 @@ class WhisperManager {
     let deletedCount = 0;
 
     try {
+      for (const model of customLocalModels
+        .listModels()
+        .filter((model) => model.engine === "whisper")) {
+        await this.deleteWhisperModel(model.id);
+        totalFreed += model.sizeBytes;
+        deletedCount++;
+      }
       if (!fs.existsSync(modelsDir)) {
-        return { success: true, deleted_count: 0, freed_bytes: 0, freed_mb: 0 };
+        return {
+          success: true,
+          deleted_count: deletedCount,
+          freed_bytes: totalFreed,
+          freed_mb: Math.round(totalFreed / (1024 * 1024)),
+        };
       }
 
       const files = await fsPromises.readdir(modelsDir);

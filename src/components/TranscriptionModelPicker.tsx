@@ -6,6 +6,8 @@ import { Download, Trash2, Cloud, Lock, X, Zap, Check, CircleAlert } from "./ico
 import { ProviderIcon } from "./ui/ProviderIcon";
 import { ProviderTabs } from "./ui/ProviderTabs";
 import ModelCardList from "./ui/ModelCardList";
+import { CustomLocalSpeechModels } from "./CustomLocalSpeechModels";
+import { BarkModelNotice } from "./BarkModelNotice";
 import { DownloadProgressBar } from "./ui/DownloadProgressBar";
 import { ConfirmDialog } from "./ui/dialog";
 import { useDialogs } from "../hooks/useDialogs";
@@ -57,7 +59,7 @@ import {
 import { getCachedPlatform } from "../utils/platform";
 import { pickWhisperGpuBackend } from "../utils/whisperGpuPack";
 import logger from "../utils/logger";
-import type { ParakeetCheckResult } from "../types/electron";
+import type { CustomLocalSpeechModel, ParakeetCheckResult } from "../types/electron";
 
 interface LocalModel {
   model: string;
@@ -207,6 +209,9 @@ function LocalModelCard({
           )}
         </div>
       </div>
+      {provider === "bark" && (
+        <p className="ms-7 me-3 mb-2 text-xs text-muted-foreground">{description}</p>
+      )}
       {modelCardUrl && (
         <a
           href={modelCardUrl}
@@ -619,7 +624,7 @@ export default function TranscriptionModelPicker({
 
   const validateAndSelectModel = useCallback((loadedModels: LocalModel[]) => {
     const current = selectedLocalModelRef.current;
-    if (!current) return;
+    if (!current || current.startsWith("custom-")) return;
 
     // The whisper list loads on a mere browse of the Whisper tab, so the
     // committed selection can be a foreign id (a Parakeet model while nvidia
@@ -1019,6 +1024,15 @@ export default function TranscriptionModelPicker({
     [onLocalModelSelect, onLocalProviderSelect]
   );
 
+  const handleCustomModelSelect = useCallback(
+    (model: CustomLocalSpeechModel) => {
+      setInternalLocalProvider(model.provider);
+      onLocalProviderSelect?.(model.provider);
+      onLocalModelSelect(model.id, model.provider);
+    },
+    [onLocalModelSelect, onLocalProviderSelect]
+  );
+
   const handleBaseUrlBlur = useCallback(() => {
     if (!setCloudTranscriptionBaseUrl || selectedCloudProvider !== "custom") return;
 
@@ -1262,10 +1276,11 @@ export default function TranscriptionModelPicker({
             downloaded: false,
             size_mb: info.sizeMb,
           }))
-        : localModels;
+        : localModels.filter((model) => !model.model.startsWith("custom-"));
 
     return (
       <div className="space-y-0.5">
+        {internalLocalProvider === "bark" && <BarkModelNotice />}
         {modelsToRender.map((model) => {
           const modelId = model.model;
           const info = WHISPER_MODEL_INFO[modelId] ?? {
@@ -1338,10 +1353,15 @@ export default function TranscriptionModelPicker({
             size_mb: info.sizeMb,
           }))
         : parakeetModels
-    ).filter((model) => getASRModelOrganization(model.model) === internalLocalProvider);
+    ).filter(
+      (model) =>
+        !model.model.startsWith("custom-") &&
+        getASRModelOrganization(model.model) === internalLocalProvider
+    );
 
     return (
       <div className="space-y-0.5">
+        {internalLocalProvider === "bark" && <BarkModelNotice />}
         {modelsToRender.map((model) => {
           const modelId = model.model;
           const info = PARAKEET_MODEL_INFO[modelId] ?? {
@@ -1565,6 +1585,13 @@ export default function TranscriptionModelPicker({
         </>
       ) : (
         <>
+          <CustomLocalSpeechModels
+            selectedModelId={selectedLocalModel}
+            onSelect={handleCustomModelSelect}
+            onClearSelection={(model) => onLocalModelSelect("", model.provider)}
+            streamingOnly={streamingOnly}
+            parakeetUnavailable={parakeetCapability?.supported === false}
+          />
           <ProviderTabs
             providers={localProviderTabs}
             selectedId={internalLocalProvider}

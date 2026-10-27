@@ -61,6 +61,12 @@ function createPcm16Wav(sampleValue, sampleCount = 160) {
 
 test("transcribes audible mono 16 kHz WAV input", async (t) => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "openwhispr-parakeet-wav-test-"));
+  const previousCacheRoot = process.env.OPENWHISPR_CACHE_ROOT;
+  process.env.OPENWHISPR_CACHE_ROOT = path.join(tempHome, ".cache", "openwhispr");
+  t.after(() => {
+    if (previousCacheRoot === undefined) delete process.env.OPENWHISPR_CACHE_ROOT;
+    else process.env.OPENWHISPR_CACHE_ROOT = previousCacheRoot;
+  });
   const originalLoad = Module._load;
   let ffmpegUtils;
   let conversions = 0;

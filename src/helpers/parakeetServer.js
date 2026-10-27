@@ -14,8 +14,12 @@ const {
 const { getSafeTempDir } = require("./safeTempDir");
 const { createAbortError } = require("./abortError");
 const ParakeetWsServer = require("./parakeetWsServer");
+const CustomParakeetCli = require("./customParakeetCli");
+const { isBarkModel, getBarkModelPath } = require("./barkModelPaths");
+const { isCustomModelId, resolveModelPath } = require("./customLocalModels");
 const { splitAtPauses } = require("./parakeetSegmentation");
 const {
+  usesPrivateOnnxRuntime,
   getModelRuntime,
   getModelType,
   getRequiredModelFiles,
@@ -55,6 +59,8 @@ async function mapWithConcurrency(items, limit, fn) {
 class ParakeetServerManager {
   constructor() {
     this.wsServer = new ParakeetWsServer();
+    this.customCli = new CustomParakeetCli();
+    this.activeCustomModel = null;
   }
 
   getBinaryPath(runtime) {
@@ -74,12 +80,24 @@ class ParakeetServerManager {
   }
 
   isModelDownloaded(modelName) {
-    const modelDir = path.join(this.getModelsDir(), modelName);
+    let modelDir;
+    try {
+      modelDir = this.getModelPath(modelName);
+    } catch {
+      return false;
+    }
     if (!fs.existsSync(modelDir)) return false;
 
     return getRequiredModelFiles(modelName).every((file) =>
       fs.existsSync(path.join(modelDir, file))
     );
+  }
+
+  getModelPath(modelName) {
+    if (isBarkModel(modelName)) return getBarkModelPath(modelName);
+    return isCustomModelId(modelName)
+      ? resolveModelPath(modelName, "parakeet")
+      : path.join(this.getModelsDir(), modelName);
   }
 
   async _ensureWav(audioBuffer) {
@@ -118,7 +136,7 @@ class ParakeetServerManager {
       if (signal?.aborted) throw createAbortError("Parakeet transcription cancelled");
     };
 
-    const modelDir = path.join(this.getModelsDir(), modelName);
+    const modelDir = this.getModelPath(modelName);
     if (!this.isModelDownloaded(modelName)) {
       throw new Error(`Parakeet model "${modelName}" not downloaded`);
     }
@@ -137,12 +155,26 @@ class ParakeetServerManager {
       throwIfAborted();
       const runtime = getModelRuntime(modelName);
       // Awaiting unconditionally also covers a startup's warm-up completion.
-      await this.wsServer.start(
-        modelName,
-        modelDir,
-        runtime,
-        resolveModelLanguage(modelName, language)
-      );
+      const custom = usesPrivateOnnxRuntime(modelName);
+      let client = this.wsServer;
+      if (custom) {
+        await this.wsServer.stop();
+        this.activeCustomModel = modelName;
+        // The import already probed the graph. Each CLI decode reloads it.
+        client = {
+          maxConcurrentDecodes: 1,
+          transcribe: (...args) => this.customCli.transcribe(modelName, ...args),
+        };
+      } else {
+        await this.customCli.stop();
+        this.activeCustomModel = null;
+        await this.wsServer.start(
+          modelName,
+          modelDir,
+          runtime,
+          resolveModelLanguage(modelName, language)
+        );
+      }
 
       const samples = wavToFloat32Samples(wavBuffer);
       const durationSeconds = samples.length / BYTES_PER_SAMPLE / SAMPLE_RATE;
@@ -162,7 +194,7 @@ class ParakeetServerManager {
       const segments = splitAtPauses(samples, { sampleRate: SAMPLE_RATE, maxSegmentSeconds });
 
       if (segments.length === 1) {
-        const result = await this.wsServer.transcribe(samples, SAMPLE_RATE, { signal });
+        const result = await client.transcribe(samples, SAMPLE_RATE, { signal });
         if (result.text?.trim()) return result;
         throwIfAborted();
         // The RMS gate above already established audible audio, so an empty
@@ -172,7 +204,7 @@ class ParakeetServerManager {
           rms,
           samplesBytes: samples.length,
         });
-        const retry = await this.wsServer.transcribe(samples, SAMPLE_RATE, { signal });
+        const retry = await client.transcribe(samples, SAMPLE_RATE, { signal });
         return { ...retry, elapsed: (result.elapsed || 0) + (retry.elapsed || 0) };
       }
 
@@ -185,7 +217,7 @@ class ParakeetServerManager {
 
       const decodeSegment = async (segment, segmentIndex) => {
         throwIfAborted();
-        const first = await this.wsServer.transcribe(segment, SAMPLE_RATE, { signal });
+        const first = await client.transcribe(segment, SAMPLE_RATE, { signal });
         if (first.text || computeFloat32RMS(segment) < SILENCE_RMS_THRESHOLD) return first;
         throwIfAborted();
         // An empty decode of audible audio silently amputates the transcript
@@ -194,7 +226,7 @@ class ParakeetServerManager {
           segmentIndex,
           segmentDuration: segment.length / BYTES_PER_SAMPLE / SAMPLE_RATE,
         });
-        const retry = await this.wsServer.transcribe(segment, SAMPLE_RATE, { signal });
+        const retry = await client.transcribe(segment, SAMPLE_RATE, { signal });
         if (!retry.text) {
           debugLogger.warn("Parakeet segment still empty after retry; transcript truncated", {
             segmentIndex,
@@ -212,7 +244,7 @@ class ParakeetServerManager {
       // server's work threads side by side instead of in four serial passes.
       const results = await mapWithConcurrency(
         segments,
-        this.wsServer.maxConcurrentDecodes,
+        client.maxConcurrentDecodes,
         decodeSegment
       );
       const text = results
@@ -244,12 +276,25 @@ class ParakeetServerManager {
   }
 
   async startServer(modelName, language) {
+    if (usesPrivateOnnxRuntime(modelName)) {
+      try {
+        this.getModelPath(modelName);
+        await this.wsServer.stop();
+        await this.customCli.start(modelName);
+        this.activeCustomModel = modelName;
+        return { success: true, port: null, transport: "stdio" };
+      } catch (error) {
+        return { success: false, reason: error.message };
+      }
+    }
+    await this.customCli.stop();
+    this.activeCustomModel = null;
     const runtime = getModelRuntime(modelName);
     if (!this.wsServer.isAvailable(runtime)) {
       return { success: false, reason: "parakeet WS server binary not found" };
     }
 
-    const modelDir = path.join(this.getModelsDir(), modelName);
+    const modelDir = this.getModelPath(modelName);
     if (!this.isModelDownloaded(modelName)) {
       return { success: false, reason: `Model "${modelName}" not downloaded` };
     }
@@ -269,10 +314,13 @@ class ParakeetServerManager {
   }
 
   async stopServer() {
+    await this.customCli.stop();
+    this.activeCustomModel = null;
     await this.wsServer.stop();
   }
 
   getServerStatus() {
+    if (this.activeCustomModel) return this.customCli.getStatus();
     return this.wsServer.getStatus();
   }
 

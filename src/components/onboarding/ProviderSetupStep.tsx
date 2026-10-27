@@ -12,12 +12,14 @@ import { useTranslation } from "react-i18next";
 import { FieldLabel, ProviderCheckField } from "../ui/ProviderCheckField";
 import { ConnectionCheckAnnouncer } from "../ui/ConnectionCheckAnnouncer";
 import { Button } from "../ui/button";
+import { CustomLocalSpeechModels } from "../CustomLocalSpeechModels";
+import { BarkModelNotice } from "../BarkModelNotice";
 import { ProviderIcon } from "../ui/ProviderIcon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useConnectionAutoCheck } from "../../hooks/useConnectionAutoCheck";
 import { isWindowSwitchBlur } from "../../hooks/useFocusHold";
 import { useModelDownload } from "../../hooks/useModelDownload";
-import type { ParakeetCheckResult } from "../../types/electron";
+import type { CustomLocalSpeechModel, ParakeetCheckResult } from "../../types/electron";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { normalizeBaseUrl } from "../../config/constants";
 import { withHttpsScheme } from "../../utils/urlUtils";
@@ -291,7 +293,7 @@ function resolveInitialLocalSelection(
     ? modelRegistry.getProvider(requestedProvider)
       ? requestedProvider
       : "qwen"
-    : requestedProvider === "nvidia" || requestedProvider === "oruk"
+    : requestedProvider === "nvidia" || requestedProvider === "oruk" || requestedProvider === "bark"
       ? requestedProvider
       : "whisper";
   const savedModel = assistant
@@ -772,6 +774,7 @@ export function LocalModelSetupStep({
   const [downloadedWhisper, setDownloadedWhisper] = useState<Set<string>>(new Set());
   const [downloadedParakeet, setDownloadedParakeet] = useState<Set<string>>(new Set());
   const [downloadedLlm, setDownloadedLlm] = useState<Set<string>>(new Set());
+  const [customModels, setCustomModels] = useState<CustomLocalSpeechModel[]>([]);
   const [parakeetCapability, setParakeetCapability] = useState<ParakeetCheckResult | null>(null);
   const parakeetUnavailable = !assistant && parakeetCapability?.supported === false;
 
@@ -881,10 +884,13 @@ export function LocalModelSetupStep({
   }, [assistant, selectedProvider]);
 
   useEffect(() => {
+    // Imported models live in the native registry, which loads separately from
+    // this built-in catalog. Keep a resumed import selected while it loads.
+    if (!assistant && selectedModel.startsWith("custom-")) return;
     if (selectedModel && !models.some((model) => model.id === selectedModel)) {
       setSelectedModel("");
     }
-  }, [models, selectedModel]);
+  }, [assistant, models, selectedModel]);
 
   useEffect(() => {
     onResumeStateChange?.({ provider: selectedProvider, modelId: selectedModel });
@@ -903,9 +909,31 @@ export function LocalModelSetupStep({
       : downloadedWhisper;
   const selectedReady = Boolean(
     selectedModel &&
-    downloadedModels.has(selectedModel) &&
+    (downloadedModels.has(selectedModel) ||
+      (!assistant &&
+        customModels.some(
+          (model) =>
+            model.id === selectedModel &&
+            model.provider === (usesParakeetManager(selectedProvider) ? "nvidia" : "whisper")
+        ))) &&
     !(parakeetUnavailable && usesParakeetManager(selectedProvider))
   );
+
+  const chooseCustomModel = (model: CustomLocalSpeechModel) => {
+    if (model.engine === "parakeet" && parakeetUnavailable) return;
+    forgetPendingLocalModel("dictation");
+    setSelectedProvider(model.provider);
+    setSelectedModel(model.id);
+    store.setLocalTranscriptionProvider(model.provider);
+    if (model.provider === "whisper") store.setWhisperModel(model.id);
+    else store.setParakeetModel(model.id);
+  };
+
+  const clearCustomSelection = (model: CustomLocalSpeechModel) => {
+    setSelectedModel("");
+    if (model.provider === "whisper") store.setWhisperModel("");
+    else store.setParakeetModel("");
+  };
 
   useEffect(() => {
     onReadinessChange(selectedReady);
@@ -949,14 +977,18 @@ export function LocalModelSetupStep({
       (assistant || !activeDownload.isDownloading)
     ) {
       rememberPendingLocalModel(kind, {
-        provider: selectedProvider === "oruk" ? "nvidia" : selectedProvider,
+        provider:
+          selectedProvider === "oruk" || selectedProvider === "bark" ? "nvidia" : selectedProvider,
         modelId,
       });
     }
     void activeDownload.downloadModel(modelId, (downloadedId): void => {
       if (
         isPendingLocalModel(kind, {
-          provider: selectedProvider === "oruk" ? "nvidia" : selectedProvider,
+          provider:
+            selectedProvider === "oruk" || selectedProvider === "bark"
+              ? "nvidia"
+              : selectedProvider,
           modelId: downloadedId,
         })
       ) {
@@ -1024,6 +1056,19 @@ export function LocalModelSetupStep({
   return (
     <section className={`mt-8 ${LOCAL_MODEL_CARD_CLASS}`}>
       <SetupStageStepper stepId={stepId} />
+
+      {!assistant && selectedProvider === "bark" && <BarkModelNotice />}
+      {!assistant && (
+        <div className="mt-6">
+          <CustomLocalSpeechModels
+            selectedModelId={selectedModel}
+            onSelect={chooseCustomModel}
+            onClearSelection={clearCustomSelection}
+            onModelsChange={setCustomModels}
+            parakeetUnavailable={parakeetUnavailable}
+          />
+        </div>
+      )}
 
       <div className="mt-6">
         <FieldLabel>{t("onboarding.rehaul.local.providerLabel")}</FieldLabel>

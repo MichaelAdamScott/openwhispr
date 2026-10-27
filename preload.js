@@ -431,6 +431,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onWhisperDownloadProgress: registerListener("whisper-download-progress"),
   checkModelStatus: (modelName) => ipcRenderer.invoke("check-model-status", modelName),
   listWhisperModels: () => ipcRenderer.invoke("list-whisper-models"),
+  listCustomLocalSpeechModels: () => ipcRenderer.invoke("list-custom-local-speech-models"),
+  importCustomLocalSpeechModel: (engine, options) =>
+    ipcRenderer.invoke("import-custom-local-speech-model", engine, options),
+  removeCustomLocalSpeechModel: (id) => ipcRenderer.invoke("remove-custom-local-speech-model", id),
   deleteWhisperModel: (modelName) => ipcRenderer.invoke("delete-whisper-model", modelName),
   deleteAllWhisperModels: () => ipcRenderer.invoke("delete-all-whisper-models"),
   cancelWhisperDownload: () => ipcRenderer.invoke("cancel-whisper-download"),

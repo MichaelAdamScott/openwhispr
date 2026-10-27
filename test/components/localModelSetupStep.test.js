@@ -234,6 +234,7 @@ async function createSetupHarness(
     );
   return {
     store: useSettingsStore,
+    customLibrary: () => findElement(tree, (node) => "onModelsChange" in (node.props ?? {})),
     pending,
     row,
     click,
@@ -277,6 +278,33 @@ async function createSetupHarness(
       return Boolean(button && !button.props.disabled);
     },
   };
+}
+
+for (const engine of ["whisper", "parakeet"]) {
+  test(`onboarding restores an imported ${engine} selection and waits for its local registry`, async (t) => {
+    const model = {
+      id: "custom-62aedb37-70e0-441b-b7fc-ddb651253487",
+      name: "Imported speech model",
+      engine,
+      provider: engine === "whisper" ? "whisper" : "nvidia",
+      sizeBytes: 1024,
+    };
+    const setup = await createSetupHarness(t, {
+      provider: model.provider,
+      selectedModel: model.id,
+      resumeState: { provider: model.provider, modelId: model.id },
+    });
+    assert.equal(setup.customLibrary().props.selectedModelId, model.id);
+    assert.equal(setup.ready(), false);
+    await React.act(async () => setup.customLibrary().props.onModelsChange([model]));
+    assert.equal(setup.ready(), true);
+    assert.equal(setup.canProceed(), true);
+    await React.act(async () => setup.customLibrary().props.onClearSelection(model));
+    assert.equal(setup.ready(), false);
+    assert.equal(setup.canProceed(), false);
+    const settings = setup.store.getState();
+    assert.equal(settings[engine === "whisper" ? "whisperModel" : "parakeetModel"], "");
+  });
 }
 
 for (const fixture of [
@@ -460,6 +488,23 @@ test("choosing a local model records it in the resume draft", async (t) => {
   // Without this the pick is only in component state, so relaunching mid-setup
   // silently reverts to whatever was saved before onboarding started.
   assert.deepEqual(setup.resumeDrafts().at(-1), { provider: "qwen", modelId: SECOND_LLM });
+});
+
+test("Bark Clean downloads and activates through the speech backend with readiness and a persisted selection", async (t) => {
+  const modelId = "bark-3-0-clean";
+  const setup = await createSetupHarness(t);
+  await setup.chooseProvider("bark");
+  assert.match(textContent(setup.row(modelId)), /common\.recommended/);
+  await setup.click(modelId, "onboarding.rehaul.local.download");
+  assert.deepEqual(setup.pending.readPendingLocalModels().dictation, {
+    provider: "nvidia",
+    modelId,
+  });
+  await setup.complete(modelId);
+  assert.equal(setup.store.getState().localTranscriptionProvider, "nvidia");
+  assert.equal(setup.store.getState().parakeetModel, modelId);
+  assert.equal(setup.ready(), true);
+  assert.deepEqual(setup.resumeDrafts().at(-1), { provider: "bark", modelId });
 });
 
 test("Oruk installs and activates Orukeet through the existing parakeet download flow", async (t) => {

@@ -15,7 +15,20 @@ const COHERE_TRANSCRIBE_MODEL_FILES = [
 ];
 
 function getModelInfo(modelName) {
+  if (typeof modelName === "string" && modelName.startsWith("custom-")) {
+    const model = require("./customLocalModels").getModel(modelName);
+    return model?.engine === "parakeet"
+      ? { ...model, runtime: "offline", sherpaModelType: "nemo_transducer" }
+      : undefined;
+  }
   return modelRegistryData.parakeetModels?.[modelName];
+}
+
+function usesPrivateOnnxRuntime(modelName) {
+  return (
+    (typeof modelName === "string" && modelName.startsWith("custom-")) ||
+    getModelInfo(modelName)?.transport === "stdio"
+  );
 }
 
 function getModelRuntime(modelName) {
@@ -63,6 +76,7 @@ function resolveModelLanguage(modelName, language) {
 }
 
 module.exports = {
+  usesPrivateOnnxRuntime,
   getModelRuntime,
   getModelType,
   getSherpaModelType,

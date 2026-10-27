@@ -164,6 +164,183 @@
         "name": "Oruk"
       },
       "modelCardUrl": "https://huggingface.co/oruk/orukeet"
+    },
+    "bark-3-0": {
+      "name": "Bark 3.0",
+      "description": "Verbatim English transcription; preserves ums, uhs and repetitions.",
+      "size": "685MB",
+      "sizeMb": 684.64,
+      "language": "en",
+      "supportedLanguages": ["en"],
+      "runtime": "offline",
+      "sherpaModelType": "nemo_transducer",
+      "transport": "stdio",
+      "leadingSilenceSeconds": 0.25,
+      "organization": {
+        "id": "bark",
+        "name": "Bark"
+      },
+      "license": "CC-BY-4.0",
+      "modelCardUrl": "https://huggingface.co/ConwayResearch/Underdog-Bark-3.0",
+      "downloadUrl": "https://huggingface.co/velddev/Underdog-Bark-3.0-sherpa-onnx/resolve/f438275bc431c58010eadb982dd0f8693ff4364f/LICENSE",
+      "extractDir": "bark-3-0",
+      "downloadFiles": [
+        {
+          "name": "LICENSE",
+          "size": 18657,
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-sherpa-onnx/resolve/f438275bc431c58010eadb982dd0f8693ff4364f/LICENSE"
+        },
+        {
+          "name": "NOTICE",
+          "size": 603,
+          "sha256": "7760825e72004ccf97f7a8b63a75e2890105a7cae8ca875b70d4df78cff9abcd",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-sherpa-onnx/resolve/f438275bc431c58010eadb982dd0f8693ff4364f/NOTICE"
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "size": 47658545,
+          "sha256": "89a081f0cf1500ec64e8a45f24f0bc10d1224aa334191e7f7e6f3226365b06b8",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-sherpa-onnx/resolve/f438275bc431c58010eadb982dd0f8693ff4364f/decoder.int8.onnx"
+        },
+        {
+          "name": "encoder.int8.onnx",
+          "size": 630748293,
+          "sha256": "d7e8f38d29aa486777eb7d505f2c7f35a0d5914760d622ed328e009cf18b9429",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-sherpa-onnx/resolve/f438275bc431c58010eadb982dd0f8693ff4364f/encoder.int8.onnx"
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "size": 6123465,
+          "sha256": "b8fe34824c5d2ec077489e4b4f66907cb47a971e1d34fe96915e9e5427df3c89",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-sherpa-onnx/resolve/f438275bc431c58010eadb982dd0f8693ff4364f/joiner.int8.onnx"
+        },
+        {
+          "name": "tokens.txt",
+          "size": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-sherpa-onnx/resolve/f438275bc431c58010eadb982dd0f8693ff4364f/tokens.txt"
+        }
+      ],
+      "recommended": false
+    },
+    "bark-3-0-plus": {
+      "name": "Bark 3.0 Plus",
+      "description": "Verbatim English transcription; preserves ums, uhs and repetitions.",
+      "size": "685MB",
+      "sizeMb": 684.64,
+      "language": "en",
+      "supportedLanguages": ["en"],
+      "runtime": "offline",
+      "sherpaModelType": "nemo_transducer",
+      "transport": "stdio",
+      "leadingSilenceSeconds": 0.25,
+      "organization": {
+        "id": "bark",
+        "name": "Bark"
+      },
+      "license": "CC-BY-4.0",
+      "modelCardUrl": "https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Plus",
+      "downloadUrl": "https://huggingface.co/velddev/Underdog-Bark-3.0-Plus-sherpa-onnx/resolve/5f95a80a9da9d392a38df8e9a6609e25be643d07/LICENSE",
+      "extractDir": "bark-3-0-plus",
+      "downloadFiles": [
+        {
+          "name": "LICENSE",
+          "size": 18657,
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Plus-sherpa-onnx/resolve/5f95a80a9da9d392a38df8e9a6609e25be643d07/LICENSE"
+        },
+        {
+          "name": "NOTICE",
+          "size": 613,
+          "sha256": "0d4bc9bcb50fc5b239e573a7ec5765534636c13b7d312866a9b423ad0b8621cf",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Plus-sherpa-onnx/resolve/5f95a80a9da9d392a38df8e9a6609e25be643d07/NOTICE"
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "size": 47658545,
+          "sha256": "89a081f0cf1500ec64e8a45f24f0bc10d1224aa334191e7f7e6f3226365b06b8",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Plus-sherpa-onnx/resolve/5f95a80a9da9d392a38df8e9a6609e25be643d07/decoder.int8.onnx"
+        },
+        {
+          "name": "encoder.int8.onnx",
+          "size": 630748318,
+          "sha256": "c32c6964e13877500701f1699d2fa92a7f6bc3cd700370ba884c09901c183a16",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Plus-sherpa-onnx/resolve/5f95a80a9da9d392a38df8e9a6609e25be643d07/encoder.int8.onnx"
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "size": 6123465,
+          "sha256": "b8fe34824c5d2ec077489e4b4f66907cb47a971e1d34fe96915e9e5427df3c89",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Plus-sherpa-onnx/resolve/5f95a80a9da9d392a38df8e9a6609e25be643d07/joiner.int8.onnx"
+        },
+        {
+          "name": "tokens.txt",
+          "size": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Plus-sherpa-onnx/resolve/5f95a80a9da9d392a38df8e9a6609e25be643d07/tokens.txt"
+        }
+      ],
+      "recommended": false
+    },
+    "bark-3-0-clean": {
+      "name": "Bark 3.0 Clean",
+      "description": "Removes fillers, false starts and repeats for readable dictation.",
+      "size": "685MB",
+      "sizeMb": 684.64,
+      "language": "en",
+      "supportedLanguages": ["en"],
+      "runtime": "offline",
+      "sherpaModelType": "nemo_transducer",
+      "transport": "stdio",
+      "leadingSilenceSeconds": 0,
+      "organization": {
+        "id": "bark",
+        "name": "Bark"
+      },
+      "license": "CC-BY-4.0",
+      "modelCardUrl": "https://huggingface.co/ConwayResearch/Underdog-Bark-3.0-Clean",
+      "downloadUrl": "https://huggingface.co/velddev/Underdog-Bark-3.0-Clean-sherpa-onnx/resolve/bdcbdca05592e01e075a7a0179fe57ef0ccb50d5/LICENSE",
+      "extractDir": "bark-3-0-clean",
+      "downloadFiles": [
+        {
+          "name": "LICENSE",
+          "size": 18657,
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Clean-sherpa-onnx/resolve/bdcbdca05592e01e075a7a0179fe57ef0ccb50d5/LICENSE"
+        },
+        {
+          "name": "NOTICE",
+          "size": 615,
+          "sha256": "4e627d41fa10efedd84a7dbb915711b0b73c904af1fee8bacdd4a2387bcc5a10",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Clean-sherpa-onnx/resolve/bdcbdca05592e01e075a7a0179fe57ef0ccb50d5/NOTICE"
+        },
+        {
+          "name": "decoder.int8.onnx",
+          "size": 47658545,
+          "sha256": "8fb0c48ed66cbc43855912e2e1b75c50037e9d8d628eef11bcb5712b7eab7681",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Clean-sherpa-onnx/resolve/bdcbdca05592e01e075a7a0179fe57ef0ccb50d5/decoder.int8.onnx"
+        },
+        {
+          "name": "encoder.int8.onnx",
+          "size": 630748321,
+          "sha256": "dd8b0275d775ea664f0306764f80a6d9b357ed7d7a1fc15e8269b08b14e89c47",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Clean-sherpa-onnx/resolve/bdcbdca05592e01e075a7a0179fe57ef0ccb50d5/encoder.int8.onnx"
+        },
+        {
+          "name": "joiner.int8.onnx",
+          "size": 6123465,
+          "sha256": "2d9a8a895f38a2e132c5c4edf9de4af638c121664329f7a86c473190700c6378",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Clean-sherpa-onnx/resolve/bdcbdca05592e01e075a7a0179fe57ef0ccb50d5/joiner.int8.onnx"
+        },
+        {
+          "name": "tokens.txt",
+          "size": 93939,
+          "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
+          "url": "https://huggingface.co/velddev/Underdog-Bark-3.0-Clean-sherpa-onnx/resolve/bdcbdca05592e01e075a7a0179fe57ef0ccb50d5/tokens.txt"
+        }
+      ],
+      "recommended": true
     }
   },
   "diarizationModels": {
