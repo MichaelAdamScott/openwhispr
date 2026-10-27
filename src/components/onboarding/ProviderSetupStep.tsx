@@ -13,6 +13,7 @@ import { FieldLabel, ProviderCheckField } from "../ui/ProviderCheckField";
 import { ConnectionCheckAnnouncer } from "../ui/ConnectionCheckAnnouncer";
 import { Button } from "../ui/button";
 import { CustomLocalSpeechModels } from "../CustomLocalSpeechModels";
+import { BarkModelNotice } from "../BarkModelNotice";
 import { ProviderIcon } from "../ui/ProviderIcon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useConnectionAutoCheck } from "../../hooks/useConnectionAutoCheck";
@@ -292,7 +293,7 @@ function resolveInitialLocalSelection(
     ? modelRegistry.getProvider(requestedProvider)
       ? requestedProvider
       : "qwen"
-    : requestedProvider === "nvidia" || requestedProvider === "oruk"
+    : requestedProvider === "nvidia" || requestedProvider === "oruk" || requestedProvider === "bark"
       ? requestedProvider
       : "whisper";
   const savedModel = assistant
@@ -976,14 +977,18 @@ export function LocalModelSetupStep({
       (assistant || !activeDownload.isDownloading)
     ) {
       rememberPendingLocalModel(kind, {
-        provider: selectedProvider === "oruk" ? "nvidia" : selectedProvider,
+        provider:
+          selectedProvider === "oruk" || selectedProvider === "bark" ? "nvidia" : selectedProvider,
         modelId,
       });
     }
     void activeDownload.downloadModel(modelId, (downloadedId): void => {
       if (
         isPendingLocalModel(kind, {
-          provider: selectedProvider === "oruk" ? "nvidia" : selectedProvider,
+          provider:
+            selectedProvider === "oruk" || selectedProvider === "bark"
+              ? "nvidia"
+              : selectedProvider,
           modelId: downloadedId,
         })
       ) {
@@ -1052,6 +1057,7 @@ export function LocalModelSetupStep({
     <section className={`mt-8 ${LOCAL_MODEL_CARD_CLASS}`}>
       <SetupStageStepper stepId={stepId} />
 
+      {!assistant && selectedProvider === "bark" && <BarkModelNotice />}
       {!assistant && (
         <div className="mt-6">
           <CustomLocalSpeechModels

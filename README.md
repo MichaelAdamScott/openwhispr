@@ -29,7 +29,7 @@
 
 OpenWhispr turns your voice into text, notes, and actions from your desktop. Press a hotkey, speak, and your words appear at your cursor. Choose between fully private offline transcription with local speech-to-text models like Orukeet, Whisper, NVIDIA Parakeet, and Cohere Transcribe — where your audio never leaves your device — or cloud processing for speed. No data collection, no telemetry, fully open source.
 
-This fork adds [custom local speech model imports](CUSTOM_LOCAL_MODELS.md) in Settings and onboarding, with Windows-tested Whisper and Bark ONNX adapters. The feature currently requires building the `feature/custom-local-speech-models` branch; see the [validation and limitations](WINDOWS_VALIDATION.md).
+This fork adds [custom local speech model imports](CUSTOM_LOCAL_MODELS.md) and a [Bark model catalog with built-in dictation cleanup](BARK_MODELS.md) in Settings and onboarding. The feature currently requires building the `feature/custom-local-speech-models` branch; see the [validation and limitations](WINDOWS_VALIDATION.md).
 
 ## Download
 

@@ -19,6 +19,7 @@ const { assertParakeetSupported, getParakeetCapability } = require("./parakeetCa
 const modelRegistryData = require("../models/modelRegistryData.json");
 const customLocalModels = require("./customLocalModels");
 const {
+  usesPrivateOnnxRuntime,
   getModelRuntime,
   getRequiredModelFiles,
   isSherpaLocalProvider,
@@ -29,6 +30,7 @@ function getParakeetModelConfig(modelName) {
   if (!modelInfo) return null;
   return {
     url: modelInfo.downloadUrl,
+    downloadFiles: modelInfo.downloadFiles,
     manifestUrl: modelInfo.manifestUrl,
     size: modelInfo.expectedSizeBytes || modelInfo.sizeMb * 1_000_000,
     expectedSizeBytes: modelInfo.expectedSizeBytes,
@@ -81,6 +83,16 @@ class ParakeetManager {
   // Cohere models keep their weights in encoder.int8.onnx.data; transducers in
   // encoder.int8.onnx. Used as the reported on-disk size of a model.
   _getModelWeightsSize(modelDir) {
+    const files = modelRegistryData.parakeetModels[path.basename(modelDir)]?.downloadFiles;
+    if (files) {
+      return files.reduce((total, file) => {
+        try {
+          return total + fs.statSync(path.join(modelDir, file.name)).size;
+        } catch {
+          return total;
+        }
+      }, 0);
+    }
     for (const file of ["encoder.int8.onnx.data", "encoder.int8.onnx"]) {
       try {
         return fs.statSync(path.join(modelDir, file)).size;
@@ -106,7 +118,7 @@ class ParakeetManager {
         capability.supported &&
         isSherpaLocalProvider(localTranscriptionProvider) &&
         parakeetModel &&
-        (customLocalModels.isCustomModelId(parakeetModel)
+        (usesPrivateOnnxRuntime(parakeetModel)
           ? this.serverManager.customCli.isAvailable()
           : this.serverManager.isAvailable(getModelRuntime(parakeetModel)))
       ) {
@@ -242,7 +254,7 @@ class ParakeetManager {
     const model = options.model || "parakeet-tdt-0.6b-v3";
     this.validateModelName(model);
     assertParakeetSupported();
-    const serverAvailable = customLocalModels.isCustomModelId(model)
+    const serverAvailable = usesPrivateOnnxRuntime(model)
       ? this.serverManager.customCli.isAvailable()
       : this.serverManager.isAvailable(getModelRuntime(model));
 
@@ -376,6 +388,37 @@ class ParakeetManager {
           `Not enough disk space to download and extract model. Need ~${Math.round((modelConfig.size * 2.5) / 1_000_000)}MB, ` +
             `only ${Math.round(spaceCheck.availableBytes / 1_000_000)}MB available.`
         );
+      }
+
+      if (modelConfig.downloadFiles) {
+        const { downloadBarkModel } = require("./barkModelDownload");
+        await downloadBarkModel({
+          modelName,
+          info: modelConfig,
+          modelsDir,
+          signal,
+          onProgress: (downloadedBytes, totalBytes) => {
+            Object.assign(downloadProcess, {
+              downloadedBytes,
+              totalBytes,
+              percentage: Math.round((downloadedBytes / totalBytes) * 100),
+            });
+            progressCallback?.({
+              type: "progress",
+              model: modelName,
+              downloaded_bytes: downloadedBytes,
+              total_bytes: totalBytes,
+              percentage: downloadProcess.percentage,
+            });
+          },
+          probe: async () => {
+            downloadProcess.phase = "installing";
+            progressCallback?.({ type: "installing", model: modelName, percentage: 100 });
+            return this.serverManager.startServer(modelName);
+          },
+        });
+        progressCallback?.({ type: "complete", model: modelName, percentage: 100 });
+        return { model: modelName, downloaded: true, path: modelPath, success: true };
       }
 
       let archiveReady = false;

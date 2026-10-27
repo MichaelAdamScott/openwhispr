@@ -18,6 +18,7 @@ const CustomParakeetCli = require("./customParakeetCli");
 const { isCustomModelId, resolveModelPath } = require("./customLocalModels");
 const { splitAtPauses } = require("./parakeetSegmentation");
 const {
+  usesPrivateOnnxRuntime,
   getModelRuntime,
   getModelType,
   getRequiredModelFiles,
@@ -152,7 +153,7 @@ class ParakeetServerManager {
       throwIfAborted();
       const runtime = getModelRuntime(modelName);
       // Awaiting unconditionally also covers a startup's warm-up completion.
-      const custom = isCustomModelId(modelName);
+      const custom = usesPrivateOnnxRuntime(modelName);
       let client = this.wsServer;
       if (custom) {
         await this.wsServer.stop();
@@ -273,9 +274,9 @@ class ParakeetServerManager {
   }
 
   async startServer(modelName, language) {
-    if (isCustomModelId(modelName)) {
+    if (usesPrivateOnnxRuntime(modelName)) {
       try {
-        resolveModelPath(modelName, "parakeet");
+        this.getModelPath(modelName);
         await this.wsServer.stop();
         await this.customCli.start(modelName);
         this.activeCustomModel = modelName;

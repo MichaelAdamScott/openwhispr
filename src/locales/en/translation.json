@@ -894,7 +894,7 @@
       "description": "Import a model already on your computer. OpenWhispr keeps its own copy and runs it locally, with no server setup.",
       "importWhisper": "Import Whisper .bin",
       "importOnnx": "Import ONNX folder",
-      "barkConversion": "Importing a Bark 3.0 ONNX conversion (experimental). Add its required 0.25 seconds of leading silence.",
+      "barkConversion": "Bark Standard / Plus padding override (0.25 seconds). Leave unchecked for Bark Clean; model metadata is detected automatically.",
       "onnxPerformance": "Imported ONNX models run on your CPU and reload for each recording, so larger models can be slower.",
       "formats": "Supports whisper.cpp GGML .bin files and sherpa-onnx compatible NeMo transducer folders with encoder, decoder, joiner and tokens. Bark 3.0 needs a compatible ONNX conversion; original .bark, MLX and CoreML files cannot be imported.",
       "busy": "Checking and loading the model locally. Large models may take a few minutes…",
@@ -937,6 +937,11 @@
     "tinfoil": {
       "transportNote": "Tinfoil streams using Voxtral Mini 4B, and batches with Voxtral Small 24B.",
       "docsLink": "Read the docs"
+    },
+    "bark": {
+      "cleanHelp": "Choose Bark 3.0 Clean for dictation: it removes ums, uhs, false starts and repeated words. Standard and Plus preserve hesitations. Silent pauses do not need to appear in the text; cleanup does not edit your recording.",
+      "proUnavailable": "Bark 3.0 Pro: no verified compatible ONNX download is available yet. Original .bark and Core ML packages cannot run through this local engine.",
+      "exportNotice": "These are community ONNX conversions (about 685 MB each), not the original compressed downloads. Models run locally on CPU. Clean is recommended for readable dictation; results may vary."
     }
   },
   "hooks": {

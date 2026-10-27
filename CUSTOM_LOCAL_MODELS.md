@@ -1,5 +1,9 @@
 # Custom local speech recognition models
 
+For Bark, you can now use the [Bark download catalog](BARK_MODELS.md) directly.
+Choose **Bark 3.0 Clean** to remove fillers and repetitions during recognition.
+Manual import remains available for compatible models you already have.
+
 This fork adds a **Your local speech models** section to the local transcription
 picker in Settings and the initial setup. Imported models stay in the library
 after restarting the app. Choose a model to use it; remove it to delete only

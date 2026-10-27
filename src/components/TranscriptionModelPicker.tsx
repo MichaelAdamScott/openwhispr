@@ -7,6 +7,7 @@ import { ProviderIcon } from "./ui/ProviderIcon";
 import { ProviderTabs } from "./ui/ProviderTabs";
 import ModelCardList from "./ui/ModelCardList";
 import { CustomLocalSpeechModels } from "./CustomLocalSpeechModels";
+import { BarkModelNotice } from "./BarkModelNotice";
 import { DownloadProgressBar } from "./ui/DownloadProgressBar";
 import { ConfirmDialog } from "./ui/dialog";
 import { useDialogs } from "../hooks/useDialogs";
@@ -208,6 +209,9 @@ function LocalModelCard({
           )}
         </div>
       </div>
+      {provider === "bark" && (
+        <p className="ms-7 me-3 mb-2 text-xs text-muted-foreground">{description}</p>
+      )}
       {modelCardUrl && (
         <a
           href={modelCardUrl}
@@ -1276,6 +1280,7 @@ export default function TranscriptionModelPicker({
 
     return (
       <div className="space-y-0.5">
+        {internalLocalProvider === "bark" && <BarkModelNotice />}
         {modelsToRender.map((model) => {
           const modelId = model.model;
           const info = WHISPER_MODEL_INFO[modelId] ?? {
@@ -1356,6 +1361,7 @@ export default function TranscriptionModelPicker({
 
     return (
       <div className="space-y-0.5">
+        {internalLocalProvider === "bark" && <BarkModelNotice />}
         {modelsToRender.map((model) => {
           const modelId = model.model;
           const info = PARAKEET_MODEL_INFO[modelId] ?? {

@@ -24,6 +24,13 @@ function getModelInfo(modelName) {
   return modelRegistryData.parakeetModels?.[modelName];
 }
 
+function usesPrivateOnnxRuntime(modelName) {
+  return (
+    (typeof modelName === "string" && modelName.startsWith("custom-")) ||
+    getModelInfo(modelName)?.transport === "stdio"
+  );
+}
+
 function getModelRuntime(modelName) {
   return getModelInfo(modelName)?.runtime === "online" ? "online" : "offline";
 }
@@ -69,6 +76,7 @@ function resolveModelLanguage(modelName, language) {
 }
 
 module.exports = {
+  usesPrivateOnnxRuntime,
   getModelRuntime,
   getModelType,
   getSherpaModelType,

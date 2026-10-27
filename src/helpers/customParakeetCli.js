@@ -5,6 +5,8 @@ const { resolveBinaryPath, getAvailableParallelism } = require("../utils/serverU
 const { getSafeTempDir } = require("./safeTempDir");
 const { createAbortError } = require("./abortError");
 const { getModel, resolveModelPath } = require("./customLocalModels");
+const { getModelsDirForService } = require("./modelDirUtils");
+const catalog = require("../models/modelRegistryData.json");
 
 // The upstream sherpa websocket executable binds all network interfaces. Custom
 // models use its offline CLI instead, with files and stdout and no listening port.
@@ -41,8 +43,13 @@ class CustomParakeetCli {
       throw new Error(
         "The private local ONNX runtime is missing. Install this fork's bundled sherpa-onnx-offline runtime before importing an ONNX model."
       );
-    const modelDir = resolveModelPath(modelName, "parakeet");
-    const model = getModel(modelName);
+    const imported = getModel(modelName);
+    const builtIn = catalog.parakeetModels[modelName];
+    if (!imported && builtIn?.transport !== "stdio") throw new Error("Unknown private ONNX model");
+    const modelDir = imported
+      ? resolveModelPath(modelName, "parakeet")
+      : path.join(getModelsDirForService("parakeet"), modelName);
+    const model = imported || builtIn;
     if (!Buffer.isBuffer(samples) || samples.length % 4)
       throw new Error("Expected float32 speech samples");
     const leadingSamples = Math.round((model.leadingSilenceSeconds || 0) * sampleRate);

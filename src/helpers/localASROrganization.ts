@@ -10,6 +10,7 @@ export const LOCAL_ASR_ORGANIZATIONS = [
   { id: "whisper", name: "OpenAI" },
   { id: "nvidia", name: "NVIDIA" },
   { id: "cohere", name: "Cohere" },
+  { id: "bark", name: "Bark" },
 ];
 
 // What the local route opens on before the user has ever chosen a local model.
@@ -34,5 +35,10 @@ export function getSelectedASROrganization(backend: string, modelId: string): st
 }
 
 export function usesParakeetManager(organizationId: string): boolean {
-  return organizationId === "oruk" || organizationId === "nvidia" || organizationId === "cohere";
+  return (
+    organizationId === "oruk" ||
+    organizationId === "nvidia" ||
+    organizationId === "cohere" ||
+    organizationId === "bark"
+  );
 }

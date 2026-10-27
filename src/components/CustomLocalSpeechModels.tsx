@@ -194,7 +194,7 @@ export function CustomLocalSpeechModels({
         />
         {t("transcription.customLocal.barkConversion", {
           defaultValue:
-            "Importing a Bark 3.0 ONNX conversion (experimental). Add its required 0.25 seconds of leading silence.",
+            "Bark Standard / Plus padding override (0.25 seconds). Leave unchecked for Bark Clean; model metadata is detected automatically.",
         })}
       </label>
       <p className="text-xs leading-relaxed text-muted-foreground">

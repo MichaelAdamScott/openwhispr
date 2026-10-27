@@ -490,6 +490,23 @@ test("choosing a local model records it in the resume draft", async (t) => {
   assert.deepEqual(setup.resumeDrafts().at(-1), { provider: "qwen", modelId: SECOND_LLM });
 });
 
+test("Bark Clean downloads and activates through the speech backend with readiness and a persisted selection", async (t) => {
+  const modelId = "bark-3-0-clean";
+  const setup = await createSetupHarness(t);
+  await setup.chooseProvider("bark");
+  assert.match(textContent(setup.row(modelId)), /common\.recommended/);
+  await setup.click(modelId, "onboarding.rehaul.local.download");
+  assert.deepEqual(setup.pending.readPendingLocalModels().dictation, {
+    provider: "nvidia",
+    modelId,
+  });
+  await setup.complete(modelId);
+  assert.equal(setup.store.getState().localTranscriptionProvider, "nvidia");
+  assert.equal(setup.store.getState().parakeetModel, modelId);
+  assert.equal(setup.ready(), true);
+  assert.deepEqual(setup.resumeDrafts().at(-1), { provider: "bark", modelId });
+});
+
 test("Oruk installs and activates Orukeet through the existing parakeet download flow", async (t) => {
   const modelId = "orukeet-v0.1.0";
   const setup = await createSetupHarness(t);

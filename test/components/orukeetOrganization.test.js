@@ -156,3 +156,43 @@ test("Oruk's model-picker tab follows the same unsupported-macOS fallback as Par
     await React.act(async () => root.unmount());
   }
 });
+
+test("Bark has its own tab and restores all downloadable variants without NVIDIA models", async (t) => {
+  const vite = await renderer(t);
+  const { default: Picker } = await vite.ssrLoadModule("/components/TranscriptionModelPicker.tsx");
+  const markup = await render(
+    vite,
+    React.createElement(Picker, {
+      selectedLocalProvider: "nvidia",
+      selectedLocalModel: "bark-3-0-clean",
+      useLocalWhisper: true,
+      onLocalModelSelect: noop,
+      onModeChange: noop,
+    })
+  );
+  assert.match(markup, />Bark</);
+  for (const name of ["Bark 3.0 Clean", "Bark 3.0 Plus", "Bark 3.0"])
+    assert.ok(markup.includes(name));
+  assert.doesNotMatch(markup, />Parakeet TDT/);
+  assert.match(markup, /removes ums/);
+  assert.match(markup, /Bark 3.0 Pro/);
+});
+
+test("onboarding restores the Bark organization for the Clean model", async (t) => {
+  const vite = await renderer(t);
+  const { LocalModelSetupStep } = await vite.ssrLoadModule(
+    "/components/onboarding/ProviderSetupStep.tsx"
+  );
+  const markup = await render(
+    vite,
+    React.createElement(LocalModelSetupStep, {
+      stepId: "local-dictation",
+      resumeState: { provider: "bark", modelId: "bark-3-0-clean" },
+      onReadinessChange: noop,
+      onProceed: noop,
+      onSkip: noop,
+    })
+  );
+  assert.match(markup, />Bark 3.0 Clean</);
+  assert.doesNotMatch(markup, />Parakeet TDT/);
+});
