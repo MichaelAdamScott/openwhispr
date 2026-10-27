@@ -1,5 +1,6 @@
 jest.mock('@/android/NoteRecordingControls', () => ({ NoteRecordingControls: () => null }));
 import React from 'react';
+import { ProviderExecutionError } from '@/services/providers/ProviderExecutionError';
 import { Alert, Modal, Platform } from 'react-native';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import NoteEditorScreen from '@/screens/NoteEditorScreen';
@@ -2491,13 +2492,13 @@ describe('Android editor consent language', () => {
     expect(mockNote.isPrivate).toBe(1);
     expect(mockUpdateConfig).not.toHaveBeenCalled();
   });
-  it('translates the action-failure heading while keeping the provider error literal', async () => {
+  it('translates the action-failure heading while keeping other error detail literal', async () => {
     (ReasoningService.processText as jest.Mock).mockRejectedValueOnce(
       new Error('Provider detail: 123'),
     );
     const view = render(<NoteEditorScreen />);
     await act(async () => fireEvent.press(view.getByTestId('run-action-1')));
-    expect(alert).toHaveBeenCalledWith('فشل الإجراء', 'Provider detail: 123');
+    expect(alert).toHaveBeenCalledWith('فشل الإجراء', 'Provider detail: 123', [{ text: 'إغلاق' }]);
   });
   it('uses the current language for a delayed failure without restarting the request', async () => {
     mockEditorLanguage = 'en';
@@ -2513,9 +2514,98 @@ describe('Android editor consent language', () => {
     expect(ReasoningService.processText).toHaveBeenCalledTimes(1);
     mockEditorLanguage = 'ar';
     view.rerender(<NoteEditorScreen />);
-    await act(async () => reject(new Error('Literal delayed provider detail')));
-    expect(alert).toHaveBeenCalledWith('فشل الإجراء', 'Literal delayed provider detail');
+    await act(async () =>
+      reject(new ProviderExecutionError('PROVIDER_RATE_LIMITED', 'synthetic-private-detail')),
+    );
+    expect(alert).toHaveBeenCalledWith('فشل الإجراء', 'بلغ الموفّر حد معدل الطلبات. حاول لاحقًا.', [
+      { text: 'إغلاق' },
+    ]);
     expect(ReasoningService.processText).toHaveBeenCalledTimes(1);
     expect(mockUpdateNote).not.toHaveBeenCalled();
+  });
+});
+
+describe('NoteEditorScreen provider failure localization', () => {
+  const originalOS = Platform.OS;
+  let alertSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    Platform.OS = 'android';
+    mockEditorLanguage = 'ar';
+    mockNote = note({
+      noteType: 'personal',
+      content: 'Keep this original note.',
+      enhancedContent: '## Existing enhanced notes',
+      title: 'Manual title',
+      isPrivate: 0,
+    });
+    mockNotesState.notes = [mockNote];
+    mockSegments = [];
+    mockConfigState.config.inference = {
+      notes: {
+        mode: 'providers',
+        providerId: 'custom',
+        endpoint: 'https://provider.example/v1',
+        modelId: 'fixture-model',
+      },
+    };
+    alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    alertSpy.mockRestore();
+    Platform.OS = originalOS;
+    mockEditorLanguage = 'en';
+  });
+
+  async function runFailingAction(error: unknown) {
+    (ReasoningService.processText as jest.Mock).mockRejectedValueOnce(error);
+    const view = render(<NoteEditorScreen />);
+    fireEvent.press(view.getByTestId('run-action-1'));
+    const buttons = alertSpy.mock.calls[0][2] as { style?: string; onPress?: () => void }[];
+    await act(async () => buttons.find((button) => button.style === 'destructive')?.onPress?.());
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledTimes(2));
+    return view;
+  }
+
+  it.each([
+    ['INVALID_CREDENTIAL', 401, 'رفض موفّر الخدمة المفتاح. تحقّق منه وحاول مجددًا.'],
+    ['PROVIDER_RATE_LIMITED', 429, 'بلغ الموفّر حد معدل الطلبات. حاول لاحقًا.'],
+    ['PROVIDER_UNAVAILABLE', 500, 'الموفّر غير متاح مؤقتًا.'],
+    ['PROVIDER_REQUEST_FAILED', 418, 'رفض الموفّر الطلب (418).'],
+    ['PROVIDER_REQUEST_FAILED', undefined, 'فشل التحسين'],
+    ['UNRECOGNIZED_PROVIDER_ERROR', undefined, 'فشل التحسين'],
+  ] as const)(
+    'localizes %s while preserving the existing note and retry',
+    async (code, status, expected) => {
+      const view = await runFailingAction(
+        new ProviderExecutionError(code, 'synthetic-private-detail', { status }),
+      );
+      expect(alertSpy.mock.calls[1]).toEqual(['فشل الإجراء', expected, [{ text: 'إغلاق' }]]);
+      expect(mockUpdateNote).not.toHaveBeenCalled();
+      expect(mockNote.content).toBe('Keep this original note.');
+      expect(mockNote.enhancedContent).toBe('## Existing enhanced notes');
+      expect(mockNote.title).toBe('Manual title');
+      expect(mockMenuProcessing).toBe(false);
+      fireEvent.press(view.getByTestId('run-action-1'));
+      expect(alertSpy).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it('retains the existing iOS error message and default action', async () => {
+    Platform.OS = 'ios';
+    await runFailingAction(
+      new ProviderExecutionError('INVALID_CREDENTIAL', 'Original iOS message'),
+    );
+    expect(alertSpy.mock.calls[1]).toEqual(['Action failed', 'Original iOS message']);
+  });
+
+  it('preserves non-provider error detail and localizes the Android dismiss action', async () => {
+    await runFailingAction(new Error('Existing local error'));
+    expect(alertSpy.mock.calls[1]).toEqual([
+      'فشل الإجراء',
+      'Existing local error',
+      [{ text: 'إغلاق' }],
+    ]);
   });
 });

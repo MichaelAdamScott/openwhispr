@@ -65,6 +65,7 @@ import { SpeakerRenameSheet } from '@/components/notes/SpeakerRenameSheet';
 import { SpeakerMergeSheet } from '@/components/notes/SpeakerMergeSheet';
 import { VoiceprintSuggestionSheet } from '@/components/notes/VoiceprintSuggestionSheet';
 import { ReasoningService } from '@/services/reasoning/ReasoningService';
+import { ProviderExecutionError } from '@/services/providers/ProviderExecutionError';
 import { SystemIcon } from '@/components/ui/SystemIcon';
 import { GradientGlassSurface } from '@/components/ui/GradientGlassSurface';
 import { Glass } from '@/components/ui/Glass';
@@ -93,6 +94,7 @@ import {
 } from '@/lib/localReasoning';
 import { ChatEmptyAnswerError, toChatErrorMessage } from '@/lib/chat/chatErrorMessage';
 import { providerDisplayName } from '@/lib/mobileProviders';
+import { getProviderErrorCopyKey } from '@/lib/providerErrorCopy';
 import { promptLocalReasoningFallback } from '@/lib/localReasoningFallback';
 import { confirmCloudOnce, confirmDestructive } from '@/lib/alerts';
 import { randomUUID } from '@/lib/uuid';
@@ -791,12 +793,26 @@ export default function NoteEditorScreen({
 
   const handleEnhanceError = useCallback((message: string, error: unknown) => {
     if (handleAccountRequiredError(error, 'AI actions', { cloudOnly: true })) return;
-    Alert.alert(
-      copyRef.current('editorFeedback.actionFailed', 'Action failed'),
+    const title = copyRef.current('editorFeedback.actionFailed', 'Action failed');
+    const body =
       error instanceof Error
         ? message
-        : copyRef.current('editorFeedback.enhancementFailed', 'Enhancement failed'),
-    );
+        : copyRef.current('editorFeedback.enhancementFailed', 'Enhancement failed');
+    if (Platform.OS === 'android') {
+      Alert.alert(
+        title,
+        error instanceof ProviderExecutionError
+          ? copyRef.current(
+              getProviderErrorCopyKey(error) ?? 'editorFeedback.enhancementFailed',
+              'Enhancement failed',
+              { status: error.status },
+            )
+          : body,
+        [{ text: copyRef.current('close', 'Close') }],
+      );
+      return;
+    }
+    Alert.alert(title, body);
   }, []);
 
   const {

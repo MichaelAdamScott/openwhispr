@@ -1,6 +1,8 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { createProviderCredentialScope } from './ProviderCredentialScope';
+import { ProviderExecutionError } from './ProviderExecutionError';
+export { ProviderExecutionError } from './ProviderExecutionError';
 import {
   buildApiUrl,
   getModelListBaseCandidates,
@@ -101,24 +103,6 @@ export interface ProviderConnectionResult {
   scope: ProviderRoute['scope'];
   /** The base that answered; a bare custom server origin may resolve to its /v1 API. */
   endpoint: string;
-}
-
-export class ProviderExecutionError extends Error {
-  public readonly code: string;
-  public readonly status?: number;
-  public readonly retryable: boolean;
-
-  public constructor(
-    code: string,
-    message: string,
-    options: { status?: number; retryable?: boolean } = {},
-  ) {
-    super(message);
-    this.name = 'ProviderExecutionError';
-    this.code = code;
-    this.status = options.status;
-    this.retryable = options.retryable ?? false;
-  }
 }
 
 function errorForStatus(providerId: string, status: number): ProviderExecutionError {

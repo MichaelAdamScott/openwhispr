@@ -42,6 +42,7 @@ import {
   setProviderCredential,
 } from '@/services/providers/ProviderCredentials';
 import { MODE_LABELS, workflowSaveConfig } from '@/lib/inferenceModes';
+import { getProviderErrorCopyKey } from '@/lib/providerErrorCopy';
 import { InferenceModePicker } from '@/components/settings/InferenceModePicker';
 import {
   ANDROID_LOCAL_MODE_LOCKED,
@@ -105,26 +106,6 @@ const PROVIDER_SETUP_URLS: Record<string, string> = {
   openai: 'https://platform.openai.com/api-keys',
   groq: 'https://console.groq.com/keys',
   openrouter: 'https://openrouter.ai/keys',
-};
-const PROVIDER_FAILURE_COPY: Readonly<Partial<Record<string, string>>> = {
-  INVALID_CREDENTIAL: 'invalidCredential',
-  PROVIDER_QUOTA_EXCEEDED: 'quotaProblem',
-  MODEL_NOT_FOUND: 'modelNotFound',
-  PROVIDER_RATE_LIMITED: 'rateLimited',
-  PROVIDER_UNAVAILABLE: 'providerUnavailable',
-  PROVIDER_REQUEST_FAILED: 'providerRequestFailed',
-  PROVIDER_UNSUPPORTED: 'providerUnsupported',
-  ENDPOINT_INVALID: 'endpointInvalid',
-  CREDENTIAL_MISSING: 'credentialNeeded',
-  CREDENTIAL_MISMATCH: 'credentialMismatch',
-  REDIRECT_BLOCKED: 'redirectBlocked',
-  PROVIDER_CERTIFICATE_UNTRUSTED: 'certificateUntrusted',
-  PROVIDER_TIMED_OUT: 'providerTimeout',
-  PROVIDER_LOCAL_NETWORK_ERROR: 'localNetwork',
-  PROVIDER_NETWORK_ERROR: 'providerNetwork',
-  PROVIDER_TRANSPORT_UNAVAILABLE: 'updateApp',
-  PROVIDER_RESPONSE_INVALID: 'invalidResponse',
-  PROVIDER_RESPONSE_TRUNCATED: 'truncatedResponse',
 };
 
 function SectionFooter({ children }: { children: string }): React.JSX.Element {
@@ -920,18 +901,13 @@ function WorkflowSettings({ scope }: { scope: MobileInferenceScope }): React.JSX
     } catch (failure: unknown) {
       if (!controller.signal.aborted) {
         const providerFailure = failure instanceof ProviderExecutionError ? failure : undefined;
-        const key =
-          providerFailure &&
-          (providerFailure.code !== 'PROVIDER_REQUEST_FAILED' ||
-            Number.isInteger(providerFailure.status))
-            ? PROVIDER_FAILURE_COPY[providerFailure.code]
-            : undefined;
+        const key = providerFailure && getProviderErrorCopyKey(providerFailure);
         const fallback =
           'Unable to check this provider. Check the endpoint and connection, then try again.';
         showError(
           Platform.OS !== 'android' && providerFailure
             ? providerFailure.message
-            : copy(`workflowSettings.${key ?? 'checkFailed'}`, fallback, {
+            : copy(key ?? 'workflowSettings.checkFailed', fallback, {
                 status: providerFailure?.status,
               }),
         );
